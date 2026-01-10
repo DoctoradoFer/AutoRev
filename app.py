@@ -8,7 +8,7 @@ from urllib3.util.retry import Retry
 import time
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
-st.set_page_config(page_title="Verificador de archivos de obligaciones de Transparencia", page_icon="🔍", layout="wide")
+st.set_page_config(page_title="Verificador de Transparencia", page_icon="🔍", layout="wide")
 
 # ==========================================
 # 🔐 SISTEMA DE SEGURIDAD (CANDADO)
@@ -18,9 +18,9 @@ def check_password():
 
     def password_entered():
         """Verifica si la contraseña ingresada es correcta."""
-        if st.session_state["password"] == "Fernando2026": 
+        if st.session_state["password"] == "Fernando2026": # <--- CAMBIA ESTA CONTRASEÑA
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  
+            del st.session_state["password"]  # Borra la contraseña de la memoria por seguridad
         else:
             st.session_state["password_correct"] = False
 
@@ -49,7 +49,7 @@ def check_password():
 
 if check_password():
     # ==========================================
-    # Bienvenido
+    # 🚀 AQUÍ EMPIEZA TU APLICACIÓN REAL
     # (Todo el código anterior va indentado aquí)
     # ==========================================
 
