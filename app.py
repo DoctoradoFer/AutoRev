@@ -6,7 +6,7 @@ from openpyxl import load_workbook
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Verificador de Transparencia", page_icon="🔍")
 
-st.title("🔍 Verificador de Hipervínculos (Multi-Hoja)")
+st.title("🔍 Verificador de Hipervínculos de obligaciones de transparencia")
 st.markdown("""
 Esta herramienta analiza **todas las hojas** de tus formatos de transparencia (Excel),
 extrae los enlaces y verifica si están **ACTIVOS** o **ROTOS**.
@@ -99,3 +99,4 @@ if archivo_subido is not None:
             )
         else:
             st.warning("No se encontraron hipervínculos en ninguna hoja del archivo.")
+
