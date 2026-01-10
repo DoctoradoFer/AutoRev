@@ -6,51 +6,48 @@ import concurrent.futures
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# --- CONFIGURACIÓN DE LA PÁGINA ---
+# --- 1. CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Verificador de Transparencia", page_icon="🔍", layout="wide")
 
+# --- 2. BARRA LATERAL (SIEMPRE VISIBLE CON LEYENDA ACADÉMICA) ---
+with st.sidebar:
+    st.header("Sobre esta herramienta")
+    st.info("🎓 App desarrollada dentro del trabajo de doctorado de Fernando Gamez Reyes.")
+    st.write("---")
+    st.success("✅ Esta aplicación es de uso académico y gratuito para la verificación de obligaciones de transparencia.")
+    
+    st.write("---")
+    # Botón de salir
+    if st.button("🔒 Cerrar Sesión"):
+        st.session_state.usuario_valido = False
+        st.rerun()
+
 # ==========================================
-# 🔐 EL BÚNKER (SEGURIDAD)
+# 🔐 3. EL BÚNKER (SEGURIDAD)
 # ==========================================
 
-# 1. ¿Ya se identificó? Si no existe la variable, es Falso.
 if "usuario_valido" not in st.session_state:
     st.session_state.usuario_valido = False
 
-# 2. Si NO es válido, mostramos SOLO el login y DETENEMOS el código.
 if not st.session_state.usuario_valido:
-    st.markdown("# 🔒 Acceso Privado - Doctorado")
+    st.markdown("# 🔒 Acceso Privado")
     st.info("Ingresa la clave autorizada para acceder a la herramienta.")
     
-    # Caja de texto simple
     clave_ingresada = st.text_input("Contraseña:", type="password")
     
-    # Botón manual para validar
     if st.button("Entrar al Sistema"):
         if clave_ingresada == "Fernando2026":
             st.session_state.usuario_valido = True
             st.success("¡Acceso Correcto!")
             st.rerun()
         else:
-            st.error("⛔ Clave incorrecta. Intenta de nuevo.")
+            st.error("⛔ Clave incorrecta.")
     
-    st.stop() # <--- MURO DE CONTENCIÓN
+    st.stop() # <--- AQUÍ SE DETIENE SI NO HAY CLAVE
 
 # ==========================================
-# 🚀 AQUÍ EMPIEZA TU APP (Solo se ve si pasas el muro)
+# 🚀 4. APLICACIÓN PRINCIPAL
 # ==========================================
-
-# --- BARRA LATERAL (CON TU TEXTO NUEVO) ---
-with st.sidebar:
-    st.header("Sobre esta herramienta")
-    st.info("🎓 App desarrollada dentro del trabajo de doctorado de Fernando.")
-    st.write("---")
-    st.write("Esta aplicación es de uso académico y gratuito para la verificación de obligaciones de transparencia.")
-    
-    st.write("---") # Separador extra para el botón de salir
-    if st.button("🔒 Cerrar Sesión"):
-        st.session_state.usuario_valido = False
-        st.rerun()
 
 # --- TÍTULO ---
 st.title("Verificador de Hipervínculos en formatos de obligaciones de transparencia")
@@ -163,4 +160,4 @@ if archivo_subido is not None:
                 st.download_button("📥 Descargar Reporte", csv, "reporte_doctorado.csv", "text/csv")
 
 st.write("---")
-st.markdown("##### 🎓 App desarrollada dentro del trabajo de doctorado de Fernando.")
+st.markdown("##### 🎓 App desarrollada dentro del trabajo de doctorado de Fernando Gamez Reyes.")
