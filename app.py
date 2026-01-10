@@ -1,4 +1,10 @@
 # --- CONFIGURACIÓN DE LA PÁGINA ---
+import streamlit as st
+import pandas as pd
+import requests
+from openpyxl import load_workbook
+import time
+
 st.set_page_config(page_title="Verificador de Transparencia", page_icon="🔍")
 
 st.title("🔍 Verificador de Hipervínculos de Transparencia")
@@ -101,4 +107,5 @@ if archivo_subido is not None:
                 mime="text/csv",
             )
         else:
+
             st.warning("No se encontraron hipervínculos en este archivo.")
