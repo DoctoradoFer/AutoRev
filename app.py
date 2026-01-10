@@ -10,52 +10,43 @@ from urllib3.util.retry import Retry
 st.set_page_config(page_title="Verificador de Transparencia", page_icon="🔍", layout="wide")
 
 # ==========================================
-# 🔐 SISTEMA DE SEGURIDAD (RESET FORZOSO)
+# 🔐 EL BÚNKER (SEGURIDAD SIMPLIFICADA)
 # ==========================================
 
-CONTRASENA_SECRETA = "Fernando2026"
+# 1. ¿Ya se identificó? Si no existe la variable, es Falso.
+if "usuario_valido" not in st.session_state:
+    st.session_state.usuario_valido = False
 
-# Inicializamos la variable de acceso con un nombre NUEVO para forzar el bloqueo
-if "acceso_ok" not in st.session_state:
-    st.session_state.acceso_ok = False
-
-def verificar_password():
-    """Verifica la contraseña y actualiza el estado"""
-    if st.session_state["input_clave"] == CONTRASENA_SECRETA:
-        st.session_state.acceso_ok = True
-        # Limpiamos el campo por seguridad visual
-        st.session_state["input_clave"] = ""
-    else:
-        st.session_state.acceso_ok = False
-
-# Si NO tiene acceso, mostramos el bloqueo y detenemos todo
-if not st.session_state.acceso_ok:
-    st.markdown("## 🔒 Acceso Restringido")
-    st.info("Esta herramienta forma parte de una investigación de doctorado y su acceso es privado.")
+# 2. Si NO es válido, mostramos SOLO el login y DETENEMOS el código.
+if not st.session_state.usuario_valido:
+    st.markdown("# 🔒 Acceso Privado - Doctorado")
+    st.info("Ingresa la clave autorizada para acceder a la herramienta.")
     
-    # Campo de contraseña
-    st.text_input(
-        "Ingresa la contraseña:", 
-        type="password", 
-        key="input_clave", 
-        on_change=verificar_password
-    )
+    # Caja de texto simple
+    clave_ingresada = st.text_input("Contraseña:", type="password")
     
-    st.warning("⛔ Ingresa la clave correcta y presiona ENTER para continuar.")
-    st.stop()  # <--- ESTO DETIENE LA APP AQUÍ SI NO HAY CLAVE
+    # Botón manual para validar
+    if st.button("Entrar al Sistema"):
+        if clave_ingresada == "Fernando2026":
+            st.session_state.usuario_valido = True
+            st.success("¡Acceso Correcto!")
+            st.rerun()  # <--- ESTO REINICIA LA PÁGINA YA CON ACCESO
+        else:
+            st.error("⛔ Clave incorrecta. Intenta de nuevo.")
+    
+    st.stop() # <--- MURO DE CONTENCIÓN: Nada debajo de esto se carga si no entras.
 
 # ==========================================
-# 🚀 APLICACIÓN PRINCIPAL (Solo carga si pasó el bloqueo)
+# 🚀 AQUÍ EMPIEZA TU APP (Solo se ve si pasas el muro)
 # ==========================================
 
 # --- BARRA LATERAL ---
 with st.sidebar:
-    st.header("Menú")
-    st.info(f"🎓 Doctorado Fernando")
+    st.header("Menú Doctorado")
+    st.info("🎓 Proyecto Fernando Gamez Reyes")
     st.write("---")
-    # Botón para cerrar sesión manual
     if st.button("🔒 Cerrar Sesión"):
-        st.session_state.acceso_ok = False
+        st.session_state.usuario_valido = False
         st.rerun()
 
 # --- TÍTULO ---
@@ -65,7 +56,7 @@ Esta herramienta analiza tus formatos de transparencia (Excel), extrae los enlac
 y verifica si están **ACTIVOS** o **ROTOS**.
 """)
 
-# --- LÓGICA DE VERIFICACIÓN ---
+# --- FUNCIONES ---
 def crear_sesion_segura():
     session = requests.Session()
     retry = Retry(
@@ -82,7 +73,6 @@ def verificar_un_enlace(datos_enlace):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
     
     session = crear_sesion_segura()
-    
     try:
         response = session.head(url, headers=headers, allow_redirects=True, timeout=10)
         if response.status_code == 405:
@@ -96,7 +86,6 @@ def verificar_un_enlace(datos_enlace):
             datos_enlace['Estado'] = "🔒 ACCESO DENEGADO (403)"
         else:
             datos_enlace['Estado'] = f"⚠️ ESTADO {response.status_code}"
-            
     except requests.exceptions.ConnectionError:
         datos_enlace['Estado'] = "💀 ERROR DE CONEXIÓN"
     except requests.exceptions.Timeout:
@@ -105,15 +94,13 @@ def verificar_un_enlace(datos_enlace):
         datos_enlace['Estado'] = "⚠️ ERROR DESCONOCIDO"
     finally:
         session.close()
-    
     return datos_enlace
 
-# --- INTERFAZ DE CARGA ---
+# --- INTERFAZ ---
 archivo_subido = st.file_uploader("Carga tu archivo Excel (.xlsx)", type=["xlsx"])
 
 if archivo_subido is not None:
     st.success("Archivo cargado.")
-    
     if st.button("Iniciar Verificación (Modo Robusto)"):
         st.write("📂 Escaneando archivo...")
         wb = load_workbook(archivo_subido, data_only=False)
@@ -138,35 +125,29 @@ if archivo_subido is not None:
                         })
         
         total_enlaces = len(lista_cruda)
-        
         if total_enlaces == 0:
             st.warning("No se encontraron enlaces.")
         else:
             st.info(f"Se encontraron {total_enlaces} enlaces. Verificando...")
-            
             resultados_finales = []
             barra = st.progress(0)
             texto_estado = st.empty()
             
             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                 futures = {executor.submit(verificar_un_enlace, item): item for item in lista_cruda}
-                
                 completados = 0
                 for future in concurrent.futures.as_completed(futures):
                     item_procesado = future.result()
                     resultados_finales.append(item_procesado)
                     completados += 1
-                    
                     if total_enlaces > 0:
                         progreso = int((completados / total_enlaces) * 100)
                         barra.progress(min(progreso, 100))
-                    
                     if completados % 5 == 0:
                         texto_estado.text(f"Verificando: {completados} de {total_enlaces} enlaces...")
 
             barra.progress(100)
             texto_estado.success("¡Finalizado!")
-            
             if resultados_finales:
                 df = pd.DataFrame(resultados_finales)
                 c1, c2, c3 = st.columns(3)
@@ -178,6 +159,5 @@ if archivo_subido is not None:
                 csv = df.to_csv(index=False).encode('utf-8')
                 st.download_button("📥 Descargar Reporte", csv, "reporte_doctorado.csv", "text/csv")
 
-# --- PIE DE PÁGINA ---
 st.write("---")
 st.markdown("##### 🎓 App desarrollada dentro del trabajo de doctorado de Fernando.")
