@@ -10,48 +10,52 @@ from urllib3.util.retry import Retry
 st.set_page_config(page_title="Verificador de Transparencia", page_icon="🔍", layout="wide")
 
 # ==========================================
-# 🔐 SISTEMA DE SEGURIDAD (MÉTODO ST.STOP)
+# 🔐 SISTEMA DE SEGURIDAD (RESET FORZOSO)
 # ==========================================
 
-# 1. Definimos la contraseña correcta
 CONTRASENA_SECRETA = "Fernando2026"
 
-# 2. Inicializamos el estado si no existe
-if "password_correct" not in st.session_state:
-    st.session_state.password_correct = False
+# Inicializamos la variable de acceso con un nombre NUEVO para forzar el bloqueo
+if "acceso_ok" not in st.session_state:
+    st.session_state.acceso_ok = False
 
-# 3. Función para verificar cuando dan Enter
-def verificar_input():
-    if st.session_state["input_pass"] == CONTRASENA_SECRETA:
-        st.session_state.password_correct = True
-        del st.session_state["input_pass"] # Borramos la clave del campo por seguridad
+def verificar_password():
+    """Verifica la contraseña y actualiza el estado"""
+    if st.session_state["input_clave"] == CONTRASENA_SECRETA:
+        st.session_state.acceso_ok = True
+        # Limpiamos el campo por seguridad visual
+        st.session_state["input_clave"] = ""
     else:
-        st.session_state.password_correct = False
+        st.session_state.acceso_ok = False
 
-# 4. EL GUARDIÁN: Si no está logueado, muestra el input y DETIENE EL CÓDIGO
-if not st.session_state.password_correct:
-    st.markdown("### 🔒 Acceso Restringido")
-    st.markdown("Esta herramienta forma parte de una investigación de doctorado y su acceso es privado.")
+# Si NO tiene acceso, mostramos el bloqueo y detenemos todo
+if not st.session_state.acceso_ok:
+    st.markdown("## 🔒 Acceso Restringido")
+    st.info("Esta herramienta forma parte de una investigación de doctorado y su acceso es privado.")
+    
+    # Campo de contraseña
     st.text_input(
-        "Ingresa la contraseña para continuar:", 
+        "Ingresa la contraseña:", 
         type="password", 
-        key="input_pass", 
-        on_change=verificar_input
+        key="input_clave", 
+        on_change=verificar_password
     )
-    st.error("⛔ Ingresa la clave y presiona Enter.")
-    st.stop()  # <--- ¡AQUÍ ESTÁ LA MAGIA! Esto impide que se cargue lo de abajo.
+    
+    st.warning("⛔ Ingresa la clave correcta y presiona ENTER para continuar.")
+    st.stop()  # <--- ESTO DETIENE LA APP AQUÍ SI NO HAY CLAVE
 
 # ==========================================
-# 🚀 APLICACIÓN PRINCIPAL (Solo carga si pasó el st.stop de arriba)
+# 🚀 APLICACIÓN PRINCIPAL (Solo carga si pasó el bloqueo)
 # ==========================================
 
 # --- BARRA LATERAL ---
 with st.sidebar:
-    st.header("Sobre esta herramienta")
-    st.info("🎓 App desarrollada dentro del trabajo de doctorado de Fernando.")
+    st.header("Menú")
+    st.info(f"🎓 Doctorado Fernando")
     st.write("---")
-    if st.button("Cerrar Sesión / Bloquear"):
-        st.session_state.password_correct = False
+    # Botón para cerrar sesión manual
+    if st.button("🔒 Cerrar Sesión"):
+        st.session_state.acceso_ok = False
         st.rerun()
 
 # --- TÍTULO ---
@@ -61,7 +65,7 @@ Esta herramienta analiza tus formatos de transparencia (Excel), extrae los enlac
 y verifica si están **ACTIVOS** o **ROTOS**.
 """)
 
-# --- FUNCIONES DE LÓGICA ---
+# --- LÓGICA DE VERIFICACIÓN ---
 def crear_sesion_segura():
     session = requests.Session()
     retry = Retry(
