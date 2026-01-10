@@ -5,7 +5,7 @@ from openpyxl import load_workbook
 import concurrent.futures
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
-st.set_page_config(page_title="Verificador de archivos de obligaciones de Transparencia", page_icon="🔍", layout="wide")
+st.set_page_config(page_title="Verificador de Transparencia", page_icon="🔍", layout="wide")
 
 # --- BARRA LATERAL ---
 with st.sidebar:
@@ -15,7 +15,7 @@ with st.sidebar:
     st.write("Esta aplicación utiliza procesamiento paralelo para verificar múltiples enlaces simultáneamente.")
 
 # --- TÍTULO ---
-st.title("Verificador de Hipervínculos en formatos de obligaciones de transparencai)
+st.title("Verificador de Hipervínculos en formatos de obligaciones de transparencia")
 st.markdown("""
 Esta herramienta analiza tus formatos de transparencia (Excel), extrae los enlaces
 y verifica si están **ACTIVOS** o **ROTOS**.
@@ -27,7 +27,7 @@ def verificar_un_enlace(datos_enlace):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
     
     try:
-        # Timeout reducido a 3s para agilizar, ya que vamos en paralelo
+        # Timeout reducido a 3s para agilizar
         response = requests.head(url, headers=headers, allow_redirects=True, timeout=3)
         if response.status_code == 405:
             response = requests.get(url, headers=headers, allow_redirects=True, timeout=3, stream=True)
@@ -76,55 +76,57 @@ if archivo_subido is not None:
                         })
         
         total_enlaces = len(lista_cruda)
-        st.info(f"Se encontraron {total_enlaces} enlaces. Iniciando verificación masiva...")
         
-        # 2. FASE DE PROCESAMIENTO PARALELO
-        resultados_finales = []
-        barra = st.progress(0)
-        texto_estado = st.empty()
-        
-        # Usamos ThreadPoolExecutor para lanzar 10 verificaciones a la vez
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            # Mandamos todos los enlaces a la fila de procesamiento
-            futures = {executor.submit(verificar_un_enlace, item): item for item in lista_cruda}
-            
-            completados = 0
-            for future in concurrent.futures.as_completed(futures):
-                item_procesado = future.result()
-                resultados_finales.append(item_procesado)
-                
-                completados += 1
-                progreso = int((completados / total_enlaces) * 100)
-                barra.progress(progreso)
-                texto_estado.text(f"Verificando: {completados} de {total_enlaces} enlaces...")
-
-        # 3. RESULTADOS
-        barra.progress(100)
-        texto_estado.success("¡Proceso finalizado!")
-        
-        if resultados_finales:
-            df = pd.DataFrame(resultados_finales)
-            
-            # Métricas
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Total Enlaces", len(df))
-            c2.metric("Activos", len(df[df['Estado'] == "✅ ACTIVO"]))
-            errores = len(df[df['Estado'].str.contains("ROTO|ERROR")])
-            c3.metric("Con Problemas", errores, delta_color="inverse")
-            
-            st.dataframe(df)
-            
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Descargar Reporte Rápido",
-                data=csv,
-                file_name="reporte_fast_doctorado.csv",
-                mime="text/csv",
-            )
-        else:
+        if total_enlaces == 0:
             st.warning("No se encontraron enlaces en el archivo.")
+        else:
+            st.info(f"Se encontraron {total_enlaces} enlaces. Iniciando verificación masiva...")
+            
+            # 2. FASE DE PROCESAMIENTO PARALELO
+            resultados_finales = []
+            barra = st.progress(0)
+            texto_estado = st.empty()
+            
+            # Usamos ThreadPoolExecutor para lanzar 10 verificaciones a la vez
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                # Mandamos todos los enlaces a la fila de procesamiento
+                futures = {executor.submit(verificar_un_enlace, item): item for item in lista_cruda}
+                
+                completados = 0
+                for future in concurrent.futures.as_completed(futures):
+                    item_procesado = future.result()
+                    resultados_finales.append(item_procesado)
+                    
+                    completados += 1
+                    if total_enlaces > 0:
+                        progreso = int((completados / total_enlaces) * 100)
+                        barra.progress(min(progreso, 100))
+                    texto_estado.text(f"Verificando: {completados} de {total_enlaces} enlaces...")
+
+            # 3. RESULTADOS
+            barra.progress(100)
+            texto_estado.success("¡Proceso finalizado!")
+            
+            if resultados_finales:
+                df = pd.DataFrame(resultados_finales)
+                
+                # Métricas
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Total Enlaces", len(df))
+                c2.metric("Activos", len(df[df['Estado'] == "✅ ACTIVO"]))
+                errores = len(df[df['Estado'].str.contains("ROTO|ERROR", na=False)])
+                c3.metric("Con Problemas", errores, delta_color="inverse")
+                
+                st.dataframe(df)
+                
+                csv = df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Descargar Reporte Rápido",
+                    data=csv,
+                    file_name="reporte_fast_doctorado.csv",
+                    mime="text/csv",
+                )
 
 # --- PIE DE PÁGINA ---
 st.write("---")
 st.markdown("##### 🎓 App desarrollada dentro del trabajo de doctorado de Fernando.")
-
