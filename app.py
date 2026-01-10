@@ -1,7 +1,22 @@
+import streamlit as st
+import pandas as pd
+import requests
+from openpyxl import load_workbook
+
+# --- CONFIGURACIÓN DE LA PÁGINA (Debe ser la primera instrucción de Streamlit) ---
+st.set_page_config(page_title="Verificador de Transparencia", page_icon="🔍")
+
+# --- BARRA LATERAL CON CRÉDITOS ---
+with st.sidebar:
+    st.header("Sobre esta herramienta")
+    st.info("🎓 App desarrollada dentro del trabajo de doctorado de Fernando.")
+    st.write("---")
+    st.write("Esta aplicación es de uso académico y gratuito para la verificación de obligaciones de transparencia.")
+
 # --- TÍTULO PRINCIPAL ---
-st.title("🔍 Verificador de Hipervínculos de archivos de obligaciones de transaprencia")
+st.title("🔍 Verificador de Hipervínculos de archivos de obligaciones de transparencia")
 st.markdown("""
-Esta herramienta analiza de tus formatos de transparencia (Excel),
+Esta herramienta analiza **todas las hojas** de tus formatos de transparencia (Excel),
 extrae los enlaces y verifica si están **ACTIVOS** o **ROTOS**.
 """)
 
@@ -27,7 +42,7 @@ def verificar_url(url):
 archivo_subido = st.file_uploader("Carga tu archivo Excel (.xlsx)", type=["xlsx"])
 
 if archivo_subido is not None:
-    st.success("Archivo cargado correctamente.")
+    st.success("Archivo cargado correctamente. Haz clic abajo para procesar.")
     
     if st.button("Iniciar Verificación Completa"):
         
@@ -85,9 +100,8 @@ if archivo_subido is not None:
                 mime="text/csv",
             )
         else:
-            st.warning("No se encontraron hipervínculos.")
+            st.warning("No se encontraron hipervínculos en el archivo.")
 
-# --- PIE DE PÁGINA DEL DOCTORADO ---
+# --- PIE DE PÁGINA ---
 st.write("---")
 st.markdown("##### 🎓 App desarrollada dentro del trabajo de doctorado de Fernando.")
-
