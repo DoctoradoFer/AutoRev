@@ -1,5 +1,5 @@
 # --- TÍTULO PRINCIPAL ---
-st.title("🔍 Verificador de Hipervínculos de archivos de obligaciones de transaprencia.")
+st.title("🔍 Verificador de Hipervínculos de archivos de obligaciones de transaprencia")
 st.markdown("""
 Esta herramienta analiza de tus formatos de transparencia (Excel),
 extrae los enlaces y verifica si están **ACTIVOS** o **ROTOS**.
@@ -90,3 +90,4 @@ if archivo_subido is not None:
 # --- PIE DE PÁGINA DEL DOCTORADO ---
 st.write("---")
 st.markdown("##### 🎓 App desarrollada dentro del trabajo de doctorado de Fernando.")
+
