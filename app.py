@@ -10,7 +10,7 @@ from urllib3.util.retry import Retry
 st.set_page_config(page_title="Verificador de Transparencia", page_icon="🔍", layout="wide")
 
 # ==========================================
-# 🔐 EL BÚNKER (SEGURIDAD SIMPLIFICADA)
+# 🔐 EL BÚNKER (SEGURIDAD)
 # ==========================================
 
 # 1. ¿Ya se identificó? Si no existe la variable, es Falso.
@@ -30,21 +30,24 @@ if not st.session_state.usuario_valido:
         if clave_ingresada == "Fernando2026":
             st.session_state.usuario_valido = True
             st.success("¡Acceso Correcto!")
-            st.rerun()  # <--- ESTO REINICIA LA PÁGINA YA CON ACCESO
+            st.rerun()
         else:
             st.error("⛔ Clave incorrecta. Intenta de nuevo.")
     
-    st.stop() # <--- MURO DE CONTENCIÓN: Nada debajo de esto se carga si no entras.
+    st.stop() # <--- MURO DE CONTENCIÓN
 
 # ==========================================
 # 🚀 AQUÍ EMPIEZA TU APP (Solo se ve si pasas el muro)
 # ==========================================
 
-# --- BARRA LATERAL ---
+# --- BARRA LATERAL (CON TU TEXTO NUEVO) ---
 with st.sidebar:
-    st.header("Menú Doctorado")
-    st.info("🎓 Proyecto Fernando Gamez Reyes")
+    st.header("Sobre esta herramienta")
+    st.info("🎓 App desarrollada dentro del trabajo de doctorado de Fernando.")
     st.write("---")
+    st.write("Esta aplicación es de uso académico y gratuito para la verificación de obligaciones de transparencia.")
+    
+    st.write("---") # Separador extra para el botón de salir
     if st.button("🔒 Cerrar Sesión"):
         st.session_state.usuario_valido = False
         st.rerun()
