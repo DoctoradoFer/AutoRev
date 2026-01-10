@@ -15,10 +15,10 @@ with st.sidebar:
     st.write("Esta aplicación utiliza procesamiento paralelo para verificar múltiples enlaces simultáneamente.")
 
 # --- TÍTULO ---
-st.title("🚀 Verificador de Hipervínculos (Modo Turbo)")
+st.title("Verificador de Hipervínculos en formatos de obligaciones de transparencai)
 st.markdown("""
 Esta herramienta analiza tus formatos de transparencia (Excel), extrae los enlaces
-y verifica si están **ACTIVOS** o **ROTOS** de forma masiva y rápida.
+y verifica si están **ACTIVOS** o **ROTOS**.
 """)
 
 # --- FUNCIÓN DE VERIFICACIÓN ---
@@ -127,3 +127,4 @@ if archivo_subido is not None:
 # --- PIE DE PÁGINA ---
 st.write("---")
 st.markdown("##### 🎓 App desarrollada dentro del trabajo de doctorado de Fernando.")
+
