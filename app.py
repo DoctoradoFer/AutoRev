@@ -6,220 +6,209 @@ import concurrent.futures
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import matplotlib.pyplot as plt
-import io
-from pypdf import PdfReader
-from bs4 import BeautifulSoup
 
-# --- 1. CONFIGURACIÓN ---
-st.set_page_config(page_title="Verificador - MODO PRUEBAS", page_icon="🧪", layout="wide")
+# --- 1. CONFIGURACIÓN DE LA PÁGINA ---
+st.set_page_config(page_title="Verificador de Transparencia", page_icon="📊", layout="wide")
 
-# --- 2. BARRA LATERAL ---
+# --- 2. BARRA LATERAL (SIEMPRE VISIBLE) ---
 with st.sidebar:
-    st.warning("⚠️ MODO LABORATORIO: LECTURA PROFUNDA")
-    st.header("🔍 Configuración del Rastreador")
-    
-    st.info("ℹ️ Escribe palabras para buscar DENTRO del contenido de los documentos (PDFs, HTML).")
-    texto_busqueda = st.text_area("Palabras a buscar (separadas por coma):", value="puente, contrato, licitacion")
-    lista_palabras = [p.strip().lower() for p in texto_busqueda.split(',') if p.strip()]
-    
-    st.write("---")
-    # Switch para activar/desactivar la lectura profunda
-    usar_lectura_profunda = st.checkbox("📖 Activar Lectura de Contenido", value=True, help="Si se activa, el sistema descargará los PDFs y buscará las palabras dentro.")
-    
-    st.write("---")
     st.header("Sobre esta herramienta")
-    # --- CORRECCIÓN REALIZADA AQUÍ 👇 ---
     st.info("🎓 App desarrollada dentro del trabajo de doctorado del Mtro. Fernando Gamez Reyes.")
+    st.write("---")
+    st.success("✅ Esta aplicación es de uso académico y gratuito para la verificación de obligaciones de transparencia.")
     
+    st.write("---")
     if st.button("🔒 Cerrar Sesión"):
         st.session_state.usuario_valido = False
         st.rerun()
 
-# --- 3. SEGURIDAD ---
+# ==========================================
+# 🔐 3. EL BÚNKER (SEGURIDAD)
+# ==========================================
+
 if "usuario_valido" not in st.session_state:
     st.session_state.usuario_valido = False
 
 if not st.session_state.usuario_valido:
-    st.markdown("# 🔒 Acceso Privado")
-    clave = st.text_input("Contraseña:", type="password")
-    if st.button("Entrar"):
-        if clave == "Fernando2026":
+    st.markdown("# 🔒 Acceso Privado - Doctorado")
+    st.info("Ingresa la clave autorizada para acceder a la herramienta.")
+    clave_ingresada = st.text_input("Contraseña:", type="password")
+    if st.button("Entrar al Sistema"):
+        if clave_ingresada == "Fernando2026":
             st.session_state.usuario_valido = True
+            st.success("¡Acceso Correcto!")
             st.rerun()
         else:
-            st.error("⛔ Incorrecto")
+            st.error("⛔ Clave incorrecta.")
     st.stop()
 
-# --- 4. LÓGICA DE LECTURA PROFUNDA ---
+# ==========================================
+# 🚀 4. LÓGICA DE VERIFICACIÓN
+# ==========================================
 
 def crear_sesion_segura():
     session = requests.Session()
-    retry = Retry(total=2, backoff_factor=0.5, status_forcelist=[500, 502, 503, 504])
-    session.mount('http://', HTTPAdapter(max_retries=retry))
-    session.mount('https://', HTTPAdapter(max_retries=retry))
+    retry = Retry(
+        total=2, read=2, connect=2, backoff_factor=0.5, 
+        status_forcelist=[500, 502, 503, 504, 429]
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
     return session
 
-def analizar_contenido(response, extension, palabras_clave):
-    """Descarga y lee el contenido buscando palabras clave."""
-    texto_extraido = ""
-    hallazgos = []
-    
-    try:
-        # 1. Si es PDF
-        if "pdf" in extension or "application/pdf" in response.headers.get("Content-Type", ""):
-            f = io.BytesIO(response.content)
-            reader = PdfReader(f)
-            # Leemos solo las primeras 5 páginas para no saturar memoria
-            num_paginas = len(reader.pages)
-            limit = min(5, num_paginas) 
-            for i in range(limit):
-                texto_extraido += reader.pages[i].extract_text() + " "
-        
-        # 2. Si es Web (HTML)
-        elif "html" in extension or "text/html" in response.headers.get("Content-Type", ""):
-            soup = BeautifulSoup(response.content, 'html.parser')
-            texto_extraido = soup.get_text()
-            
-        # 3. BÚSQUEDA
-        texto_extraido = texto_extraido.lower()
-        for palabra in palabras_clave:
-            if palabra in texto_extraido:
-                hallazgos.append(palabra.upper())
-                
-    except Exception as e:
-        return f"Error leyendo: {str(e)}"
-
-    if hallazgos:
-        return f"✅ ENCONTRADO EN DOC: {', '.join(hallazgos)}"
-    else:
-        return "Contenido leido, sin coincidencias."
-
-def procesar_enlace(datos):
-    url = datos['URL Original']
-    palabras = datos['Palabras Clave']
-    usar_profundo = datos['Usar Profundo']
-    
-    headers = {'User-Agent': 'Mozilla/5.0'}
+def verificar_un_enlace(datos_enlace):
+    url = datos_enlace['URL Original']
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
     session = crear_sesion_segura()
-    
-    datos['Estado'] = "Desconocido"
-    datos['Rastreador'] = "No analizado"
-    
     try:
-        # Primero intentamos HEAD para ver si existe (rápido)
-        if usar_profundo:
-             # Si vamos a leer, necesitamos GET directo
-            response = session.get(url, headers=headers, timeout=10, stream=False)
-        else:
-            response = session.head(url, headers=headers, timeout=5, allow_redirects=True)
-            if response.status_code == 405:
-                response = session.get(url, headers=headers, timeout=5, stream=True)
-
-        datos['Código'] = response.status_code
+        response = session.head(url, headers=headers, allow_redirects=True, timeout=5)
+        if response.status_code == 405:
+            response = session.get(url, headers=headers, allow_redirects=True, timeout=5, stream=True)
+        
+        datos_enlace['Código'] = response.status_code
         
         if response.status_code == 200:
-            datos['Estado'] = "✅ ACTIVO"
-            datos['Tipo'] = "Accesible"
-            
-            # --- AQUÍ OCURRE LA MAGIA DE LA LECTURA ---
-            if usar_profundo:
-                content_type = response.headers.get('Content-Type', '').lower()
-                extension = url.split('.')[-1].lower()
-                # Analizamos si es PDF o HTML
-                if 'pdf' in content_type or 'pdf' in extension or 'html' in content_type:
-                    resultado_lectura = analizar_contenido(response, extension, palabras)
-                    datos['Rastreador'] = resultado_lectura
-                else:
-                    datos['Rastreador'] = "Formato no legible (zip/img)"
-            else:
-                datos['Rastreador'] = "Lectura desactivada"
-                
+            datos_enlace['Estado'] = "✅ ACTIVO (200)"
+            datos_enlace['Tipo'] = "Accesible"
         elif response.status_code == 404:
-            datos['Estado'] = "❌ ROTO"
-            datos['Tipo'] = "Inaccesible"
+            datos_enlace['Estado'] = "❌ ROTO (404)"
+            datos_enlace['Tipo'] = "Inaccesible"
+        elif response.status_code == 403:
+            datos_enlace['Estado'] = "🔒 PROHIBIDO (403)"
+            datos_enlace['Tipo'] = "Bloqueado"
         else:
-            datos['Estado'] = f"⚠️ ({response.status_code})"
-            datos['Tipo'] = "Error"
+            datos_enlace['Estado'] = f"⚠️ ALERTA ({response.status_code})"
+            datos_enlace['Tipo'] = "Error Técnico"
             
-    except Exception as e:
-        datos['Estado'] = "💀 ERROR"
-        datos['Tipo'] = "Fallo"
-        datos['Rastreador'] = "No se pudo conectar"
+    except requests.exceptions.ConnectionError:
+        datos_enlace['Estado'] = "💀 ERROR CONEXIÓN"
+        datos_enlace['Tipo'] = "Fallo Red"
+        datos_enlace['Código'] = 0
+    except requests.exceptions.Timeout:
+        datos_enlace['Estado'] = "⏳ TIMEOUT"
+        datos_enlace['Tipo'] = "Fallo Red"
+        datos_enlace['Código'] = 0
+    except Exception:
+        datos_enlace['Estado'] = "⚠️ ERROR DESCONOCIDO"
+        datos_enlace['Tipo'] = "Error"
+        datos_enlace['Código'] = 0
     finally:
         session.close()
-        
-    return datos
+    return datos_enlace
 
-# --- 5. INTERFAZ ---
+# ==========================================
+# 📊 5. INTERFAZ PRINCIPAL
+# ==========================================
 
-st.title("🧪 Laboratorio: Lector de Contenido Profundo")
-st.markdown("""
-Esta herramienta **descarga y lee** el contenido de los enlaces (PDFs y Webs) para encontrar información oculta 
-que no aparece en el nombre del archivo.
-""")
+st.title("Verificador de Hipervínculos & Tablero de Impacto")
+st.markdown("Herramienta de auditoría digital para obligaciones de transparencia.")
 
-archivo_subido = st.file_uploader("Carga Excel (.xlsx)", type=["xlsx"])
+archivo_subido = st.file_uploader("Carga tu archivo Excel (.xlsx)", type=["xlsx"])
 
-if archivo_subido and st.button("🚀 Iniciar Análisis Profundo"):
-    st.write("⚙️ Procesando... Esto puede tardar más de lo normal porque estamos leyendo los documentos.")
+if archivo_subido is not None:
+    st.success("Archivo cargado correctamente.")
     
-    wb = load_workbook(archivo_subido, data_only=True) # data_only=True ayuda a veces con fórmulas
-    lista_trabajo = []
-    
-    for hoja in wb.sheetnames:
-        ws = wb[hoja]
-        for row in ws.iter_rows():
-            for cell in row:
-                url = None
-                if cell.hyperlink:
-                    url = cell.hyperlink.target
-                elif isinstance(cell.value, str) and str(cell.value).startswith(('http', 'https')):
-                    url = cell.value
-                
-                if url:
-                    lista_trabajo.append({
-                        "Hoja": hoja,
-                        "Celda": cell.coordinate,
-                        "URL Original": url,
-                        "Palabras Clave": lista_palabras,
-                        "Usar Profundo": usar_lectura_profunda
-                    })
-    
-    total = len(lista_trabajo)
-    if total == 0:
-        st.warning("No se encontraron enlaces.")
-    else:
-        barra = st.progress(0)
-        estado = st.empty()
-        resultados = []
+    if st.button("🚀 Iniciar Auditoría y Análisis"):
+        # --- PROCESAMIENTO ---
+        st.write("⚙️ Procesando archivo y verificando enlaces en tiempo real...")
+        wb = load_workbook(archivo_subido, data_only=False)
+        lista_cruda = []
         
-        # Reducimos workers a 4 para no saturar memoria con los PDFs
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {executor.submit(procesar_enlace, item): item for item in lista_trabajo}
-            completados = 0
-            for future in concurrent.futures.as_completed(futures):
-                resultados.append(future.result())
-                completados += 1
-                barra.progress(int((completados/total)*100))
-                estado.text(f"Analizando documento {completados} de {total}...")
+        for nombre_hoja in wb.sheetnames:
+            ws = wb[nombre_hoja]
+            for row in ws.iter_rows():
+                for cell in row:
+                    url_encontrada = None
+                    if cell.hyperlink:
+                        url_encontrada = cell.hyperlink.target
+                    elif isinstance(cell.value, str) and str(cell.value).startswith(('http://', 'https://')):
+                        url_encontrada = cell.value
+                    
+                    if url_encontrada:
+                        lista_cruda.append({
+                            "Hoja": nombre_hoja,
+                            "Coordenada": cell.coordinate,
+                            "URL Original": url_encontrada,
+                            "Estado": "Pendiente",
+                            "Tipo": "Pendiente",
+                            "Código": 0
+                        })
         
-        barra.progress(100)
-        estado.success("✅ Análisis Profundo Terminado")
+        total_enlaces = len(lista_cruda)
         
-        df = pd.DataFrame(resultados)
-        
-        tab1, tab2 = st.tabs(["📄 Resultados", "📡 Hallazgos en Documentos"])
-        
-        with tab1:
-            st.dataframe(df)
-            st.download_button("Descargar CSV", df.to_csv(index=False).encode('utf-8'), "analisis_profundo.csv")
+        if total_enlaces == 0:
+            st.warning("No se encontraron enlaces en el archivo.")
+        else:
+            # Barra de progreso
+            barra = st.progress(0)
+            texto_estado = st.empty()
+            resultados_finales = []
             
-        with tab2:
-            st.subheader("Documentos que contienen las palabras buscadas")
-            # Filtramos donde el rastreador encontró algo
-            encontrados = df[df['Rastreador'].str.contains("ENCONTRADO", na=False)]
-            st.metric("Documentos Positivos", len(encontrados))
-            if not encontrados.empty:
-                st.dataframe(encontrados)
-            else:
-                st.info("No se encontraron las palabras dentro de los documentos legibles.")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                futures = {executor.submit(verificar_un_enlace, item): item for item in lista_cruda}
+                completados = 0
+                for future in concurrent.futures.as_completed(futures):
+                    resultados_finales.append(future.result())
+                    completados += 1
+                    progreso = int((completados / total_enlaces) * 100)
+                    barra.progress(min(progreso, 100))
+                    if completados % 10 == 0:
+                        texto_estado.text(f"Auditando: {completados}/{total_enlaces} enlaces...")
+            
+            barra.progress(100)
+            texto_estado.success("✅ Auditoría Finalizada.")
+            
+            # Crear DataFrame
+            df = pd.DataFrame(resultados_finales)
+            
+            # --- ZONA DE RESULTADOS (TABS) ---
+            tab1, tab2 = st.tabs(["📄 Resultados Detallados", "📊 Tablero de Impacto (Gráficos)"])
+            
+            # --- PESTAÑA 1: DATOS ---
+            with tab1:
+                st.subheader("Listado de Verificación")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Total Enlaces", len(df))
+                c2.metric("Accesibles", len(df[df['Tipo'] == "Accesible"]))
+                errores = len(df[df['Tipo'] != "Accesible"])
+                c3.metric("Con Incidencias", errores, delta_color="inverse")
+                
+                st.dataframe(df)
+                csv = df.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Descargar Reporte CSV", csv, "reporte_auditoria.csv", "text/csv")
+            
+            # --- PESTAÑA 2: GRÁFICOS ---
+            with tab2:
+                st.subheader("Análisis Visual de Resultados")
+                col_graf1, col_graf2 = st.columns(2)
+                
+                # GRÁFICO 1: Pastel
+                with col_graf1:
+                    st.markdown("#### 1. Índice Global de Accesibilidad")
+                    conteo_tipos = df['Tipo'].value_counts()
+                    fig1, ax1 = plt.subplots()
+                    colores = ['#66b3ff', '#ff9999', '#ffcc99', '#ff6666']
+                    ax1.pie(conteo_tipos, labels=conteo_tipos.index, autopct='%1.1f%%', startangle=90, colors=colores)
+                    ax1.axis('equal') 
+                    st.pyplot(fig1)
+
+                # GRÁFICO 2: Barras
+                with col_graf2:
+                    st.markdown("#### 2. Detalle de Incidencias")
+                    df_errores = df[df['Tipo'] != "Accesible"]
+                    if not df_errores.empty:
+                        conteo_estados = df_errores['Estado'].value_counts()
+                        st.bar_chart(conteo_estados)
+                    else:
+                        st.success("¡Felicidades! No hay errores para graficar.")
+
+                st.write("---")
+                
+                # GRÁFICO 3: Mapa de Calor
+                st.markdown("#### 3. Mapa de Opacidad por Área (Hoja de Excel)")
+                pivot = pd.crosstab(df['Hoja'], df['Tipo'])
+                st.dataframe(pivot.style.background_gradient(cmap="Reds", subset=pivot.columns.difference(['Accesible'])))
+
+st.write("---")
+st.markdown("##### 🎓 App desarrollada dentro del trabajo de doctorado del Mtro. Fernando Gamez Reyes.")
