@@ -4,3 +4,5 @@ requests
 openpyxl
 matplotlib
 seaborn
+pypdf
+beautifulsoup4
