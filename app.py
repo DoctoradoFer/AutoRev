@@ -23,11 +23,14 @@ with st.sidebar:
     lista_palabras = [p.strip().lower() for p in texto_busqueda.split(',') if p.strip()]
     
     st.write("---")
-    # Switch para activar/desactivar la lectura profunda (por velocidad)
-    usar_lectura_profunda = st.checkbox("📖 Activar Lectura de Contenido", value=True, help="Si se activa, el sistema descargará los PDFs y buscará las palabras dentro. Es más lento pero más efectivo.")
+    # Switch para activar/desactivar la lectura profunda
+    usar_lectura_profunda = st.checkbox("📖 Activar Lectura de Contenido", value=True, help="Si se activa, el sistema descargará los PDFs y buscará las palabras dentro.")
     
     st.write("---")
-    st.markdown("### Mtro. Fernando Gamez Reyes")
+    st.header("Sobre esta herramienta")
+    # --- CORRECCIÓN REALIZADA AQUÍ 👇 ---
+    st.info("🎓 App desarrollada dentro del trabajo de doctorado del Mtro. Fernando Gamez Reyes.")
+    
     if st.button("🔒 Cerrar Sesión"):
         st.session_state.usuario_valido = False
         st.rerun()
