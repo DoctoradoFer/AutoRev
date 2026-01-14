@@ -6,7 +6,7 @@ import concurrent.futures
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import matplotlib.pyplot as plt
-import seaborn as sns # Opcional para mejores colores, pero usaremos nativo si no está
+import seaborn as sns 
 
 # --- 1. CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Verificador - MODO PRUEBAS", page_icon="🧪", layout="wide")
@@ -98,3 +98,147 @@ def verificar_un_enlace(datos_enlace):
     except Exception:
         datos_enlace['Estado'] = "⚠️ ERROR DESCONOCIDO"
         datos_enlace['Tipo'] = "Error"
+        datos_enlace['Código'] = 0
+    finally:
+        session.close()
+    return datos_enlace
+
+# ==========================================
+# 📊 5. INTERFAZ PRINCIPAL (ESTO FALTABA)
+# ==========================================
+
+st.title("🧪 Laboratorio Integral: Auditoría, Búsqueda y Gráficos")
+st.markdown("Herramienta experimental para análisis masivo de obligaciones de transparencia.")
+
+if lista_palabras:
+    st.caption(f"👀 El Sabueso está buscando: {', '.join(lista_palabras)}")
+
+archivo_subido = st.file_uploader("Carga tu archivo Excel (.xlsx)", type=["xlsx"])
+
+if archivo_subido is not None:
+    st.success("Archivo cargado.")
+    
+    if st.button("🚀 Iniciar Super-Auditoría"):
+        st.write("⚙️ Ejecutando: Extracción + Búsqueda de Texto + Verificación de Enlaces...")
+        wb = load_workbook(archivo_subido, data_only=False)
+        lista_cruda = []
+        
+        # --- FASE 1: EXTRACCIÓN Y SABUESO ---
+        for nombre_hoja in wb.sheetnames:
+            ws = wb[nombre_hoja]
+            for row in ws.iter_rows():
+                for cell in row:
+                    url_encontrada = None
+                    texto_celda = str(cell.value) if cell.value else ""
+                    
+                    if cell.hyperlink:
+                        url_encontrada = cell.hyperlink.target
+                    elif isinstance(cell.value, str) and str(cell.value).startswith(('http://', 'https://')):
+                        url_encontrada = cell.value
+                    
+                    if url_encontrada:
+                        # Lógica del Sabueso
+                        hallazgo = "Normal"
+                        texto_para_analizar = (texto_celda + " " + url_encontrada).lower()
+                        for palabra in lista_palabras:
+                            if palabra in texto_para_analizar:
+                                hallazgo = f"🔍 {palabra.upper()}"
+                                break
+                        
+                        lista_cruda.append({
+                            "Hoja": nombre_hoja,
+                            "Coordenada": cell.coordinate,
+                            "Texto Celda": texto_celda,
+                            "URL Original": url_encontrada,
+                            "Sabueso": hallazgo,
+                            "Estado": "Pendiente",
+                            "Tipo": "Pendiente",
+                            "Código": 0
+                        })
+        
+        total_enlaces = len(lista_cruda)
+        
+        if total_enlaces == 0:
+            st.warning("No se encontraron enlaces.")
+        else:
+            # --- FASE 2: VERIFICACIÓN CONCURRENTE ---
+            barra = st.progress(0)
+            texto_estado = st.empty()
+            resultados_finales = []
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                futures = {executor.submit(verificar_un_enlace, item): item for item in lista_cruda}
+                completados = 0
+                for future in concurrent.futures.as_completed(futures):
+                    resultados_finales.append(future.result())
+                    completados += 1
+                    progreso = int((completados / total_enlaces) * 100)
+                    barra.progress(min(progreso, 100))
+                    if completados % 10 == 0:
+                        texto_estado.text(f"Auditando: {completados}/{total_enlaces}...")
+            
+            barra.progress(100)
+            texto_estado.success("✅ Proceso Completado.")
+            
+            df = pd.DataFrame(resultados_finales)
+            
+            # --- FASE 3: VISUALIZACIÓN (TABS) ---
+            st.write("---")
+            tab1, tab2, tab3 = st.tabs(["📄 Datos Detallados", "🕵️‍♂️ Hallazgos del Sabueso", "📊 Tablero Gráfico"])
+            
+            # TAB 1
+            with tab1:
+                st.subheader("Base de Datos Completa")
+                st.dataframe(df)
+                csv = df.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Descargar Todo (CSV)", csv, "auditoria_completa_lab.csv", "text/csv")
+                
+            # TAB 2
+            with tab2:
+                st.subheader("Resultados de Búsqueda de Texto")
+                df_sospechosos = df[df['Sabueso'].str.contains("🔍")]
+                
+                col_s1, col_s2 = st.columns(2)
+                col_s1.metric("Total Coincidencias", len(df_sospechosos))
+                
+                if not df_sospechosos.empty:
+                    conteo_palabras = df_sospechosos['Sabueso'].value_counts()
+                    st.bar_chart(conteo_palabras) # Versión simple de streamlit para evitar errores
+                    st.error("Registros que contienen las palabras clave:")
+                    st.dataframe(df_sospechosos)
+                else:
+                    st.success("El Sabueso no encontró ninguna palabra clave en los registros.")
+
+            # TAB 3
+            with tab3:
+                st.subheader("Análisis de Accesibilidad e Impacto")
+                
+                c_graf1, c_graf2 = st.columns(2)
+                
+                # Gráfico Pastel
+                with c_graf1:
+                    st.markdown("#### Índice Global")
+                    conteo_tipos = df['Tipo'].value_counts()
+                    fig1, ax1 = plt.subplots()
+                    colores = ['#66b3ff', '#ff9999', '#ffcc99', '#ff6666']
+                    ax1.pie(conteo_tipos, labels=conteo_tipos.index, autopct='%1.1f%%', startangle=90, colors=colores)
+                    ax1.axis('equal') 
+                    st.pyplot(fig1)
+
+                # Gráfico Barras (Errores)
+                with c_graf2:
+                    st.markdown("#### Taxonomía de Errores")
+                    df_errores = df[df['Tipo'] != "Accesible"]
+                    if not df_errores.empty:
+                        conteo_estados = df_errores['Estado'].value_counts()
+                        st.bar_chart(conteo_estados)
+                    else:
+                        st.info("Sin errores técnicos.")
+
+                st.write("---")
+                st.markdown("#### Mapa de Calor (Hojas vs Estado)")
+                pivot = pd.crosstab(df['Hoja'], df['Tipo'])
+                st.dataframe(pivot.style.background_gradient(cmap="Reds"))
+
+st.write("---")
+st.markdown("##### 🧪 MODO PRUEBAS - Rama: `pruebas`")
