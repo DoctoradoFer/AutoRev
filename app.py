@@ -11,6 +11,7 @@ st.set_page_config(page_title="Verificador de Transparencia", page_icon="🔍", 
 
 # --- 2. BARRA LATERAL (SIEMPRE VISIBLE CON LEYENDA ACADÉMICA) ---
 with st.sidebar:
+    st.warning("⚠️ ESTÁS EN MODO PRUEBAS")
     st.header("Sobre esta herramienta")
     st.info("🎓 App desarrollada dentro del trabajo de doctorado de Fernando Gamez Reyes.")
     st.write("---")
@@ -161,3 +162,4 @@ if archivo_subido is not None:
 
 st.write("---")
 st.markdown("##### 🎓 App desarrollada dentro del trabajo de doctorado de Fernando Gamez Reyes.")
+
