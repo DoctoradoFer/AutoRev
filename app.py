@@ -6,245 +6,217 @@ import concurrent.futures
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import matplotlib.pyplot as plt
-import seaborn as sns 
+import io
+from pypdf import PdfReader
+from bs4 import BeautifulSoup
 
-# --- 1. CONFIGURACIÓN DE LA PÁGINA ---
+# --- 1. CONFIGURACIÓN ---
 st.set_page_config(page_title="Verificador - MODO PRUEBAS", page_icon="🧪", layout="wide")
 
 # --- 2. BARRA LATERAL ---
 with st.sidebar:
-    st.warning("⚠️ ESTÁS EN MODO PRUEBAS (LABORATORIO)")
+    st.warning("⚠️ MODO LABORATORIO: LECTURA PROFUNDA")
     st.header("🔍 Configuración del Rastreador")
     
-    # --- CONFIGURACIÓN DE BÚSQUEDA ---
-    st.info("ℹ️ INSTRUCCIONES: Escribe las palabras que deseas encontrar separadas por una coma.")
-    st.caption("Ejemplo: puente, contrato, nomina")
-    
-    texto_busqueda = st.text_area("Palabras a rastrear:", value="reservado, confidencial, inexistente, prueba, vacio, no aplica")
-    # Limpiamos y preparamos las palabras
+    st.info("ℹ️ Escribe palabras para buscar DENTRO del contenido de los documentos (PDFs, HTML).")
+    texto_busqueda = st.text_area("Palabras a buscar (separadas por coma):", value="puente, contrato, licitacion")
     lista_palabras = [p.strip().lower() for p in texto_busqueda.split(',') if p.strip()]
     
     st.write("---")
-    st.header("Sobre esta herramienta")
-    st.info("🎓 App desarrollada dentro del trabajo de doctorado del Mtro. Fernando Gamez Reyes.")
+    # Switch para activar/desactivar la lectura profunda (por velocidad)
+    usar_lectura_profunda = st.checkbox("📖 Activar Lectura de Contenido", value=True, help="Si se activa, el sistema descargará los PDFs y buscará las palabras dentro. Es más lento pero más efectivo.")
+    
+    st.write("---")
+    st.markdown("### Mtro. Fernando Gamez Reyes")
     if st.button("🔒 Cerrar Sesión"):
         st.session_state.usuario_valido = False
         st.rerun()
 
-# ==========================================
-# 🔐 3. EL BÚNKER (SEGURIDAD)
-# ==========================================
-
+# --- 3. SEGURIDAD ---
 if "usuario_valido" not in st.session_state:
     st.session_state.usuario_valido = False
 
 if not st.session_state.usuario_valido:
-    st.markdown("# 🔒 Acceso Privado - LABORATORIO")
-    st.info("Ingresa la clave autorizada para acceder a la herramienta.")
-    clave_ingresada = st.text_input("Contraseña:", type="password")
-    if st.button("Entrar al Sistema"):
-        if clave_ingresada == "Fernando2026":
+    st.markdown("# 🔒 Acceso Privado")
+    clave = st.text_input("Contraseña:", type="password")
+    if st.button("Entrar"):
+        if clave == "Fernando2026":
             st.session_state.usuario_valido = True
-            st.success("¡Acceso Correcto!")
             st.rerun()
         else:
-            st.error("⛔ Clave incorrecta.")
+            st.error("⛔ Incorrecto")
     st.stop()
 
-# ==========================================
-# 🚀 4. LÓGICA DE VERIFICACIÓN
-# ==========================================
+# --- 4. LÓGICA DE LECTURA PROFUNDA ---
 
 def crear_sesion_segura():
     session = requests.Session()
-    retry = Retry(
-        total=2, read=2, connect=2, backoff_factor=0.5, 
-        status_forcelist=[500, 502, 503, 504, 429]
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount('http://', adapter)
-    session.mount('https://', adapter)
+    retry = Retry(total=2, backoff_factor=0.5, status_forcelist=[500, 502, 503, 504])
+    session.mount('http://', HTTPAdapter(max_retries=retry))
+    session.mount('https://', HTTPAdapter(max_retries=retry))
     return session
 
-def verificar_un_enlace(datos_enlace):
-    url = datos_enlace['URL Original']
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-    session = crear_sesion_segura()
+def analizar_contenido(response, extension, palabras_clave):
+    """Descarga y lee el contenido buscando palabras clave."""
+    texto_extraido = ""
+    hallazgos = []
+    
     try:
-        response = session.head(url, headers=headers, allow_redirects=True, timeout=5)
-        if response.status_code == 405:
-            response = session.get(url, headers=headers, allow_redirects=True, timeout=5, stream=True)
+        # 1. Si es PDF
+        if "pdf" in extension or "application/pdf" in response.headers.get("Content-Type", ""):
+            f = io.BytesIO(response.content)
+            reader = PdfReader(f)
+            # Leemos solo las primeras 5 páginas para no saturar memoria
+            num_paginas = len(reader.pages)
+            limit = min(5, num_paginas) 
+            for i in range(limit):
+                texto_extraido += reader.pages[i].extract_text() + " "
         
-        datos_enlace['Código'] = response.status_code
+        # 2. Si es Web (HTML)
+        elif "html" in extension or "text/html" in response.headers.get("Content-Type", ""):
+            soup = BeautifulSoup(response.content, 'html.parser')
+            texto_extraido = soup.get_text()
+            
+        # 3. BÚSQUEDA
+        texto_extraido = texto_extraido.lower()
+        for palabra in palabras_clave:
+            if palabra in texto_extraido:
+                hallazgos.append(palabra.upper())
+                
+    except Exception as e:
+        return f"Error leyendo: {str(e)}"
+
+    if hallazgos:
+        return f"✅ ENCONTRADO EN DOC: {', '.join(hallazgos)}"
+    else:
+        return "Contenido leido, sin coincidencias."
+
+def procesar_enlace(datos):
+    url = datos['URL Original']
+    palabras = datos['Palabras Clave']
+    usar_profundo = datos['Usar Profundo']
+    
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    session = crear_sesion_segura()
+    
+    datos['Estado'] = "Desconocido"
+    datos['Rastreador'] = "No analizado"
+    
+    try:
+        # Primero intentamos HEAD para ver si existe (rápido)
+        if usar_profundo:
+             # Si vamos a leer, necesitamos GET directo
+            response = session.get(url, headers=headers, timeout=10, stream=False)
+        else:
+            response = session.head(url, headers=headers, timeout=5, allow_redirects=True)
+            if response.status_code == 405:
+                response = session.get(url, headers=headers, timeout=5, stream=True)
+
+        datos['Código'] = response.status_code
         
         if response.status_code == 200:
-            datos_enlace['Estado'] = "✅ ACTIVO (200)"
-            datos_enlace['Tipo'] = "Accesible"
-        elif response.status_code == 404:
-            datos_enlace['Estado'] = "❌ ROTO (404)"
-            datos_enlace['Tipo'] = "Inaccesible"
-        elif response.status_code == 403:
-            datos_enlace['Estado'] = "🔒 PROHIBIDO (403)"
-            datos_enlace['Tipo'] = "Bloqueado"
-        else:
-            datos_enlace['Estado'] = f"⚠️ ALERTA ({response.status_code})"
-            datos_enlace['Tipo'] = "Error Técnico"
+            datos['Estado'] = "✅ ACTIVO"
+            datos['Tipo'] = "Accesible"
             
-    except requests.exceptions.ConnectionError:
-        datos_enlace['Estado'] = "💀 ERROR CONEXIÓN"
-        datos_enlace['Tipo'] = "Fallo Red"
-        datos_enlace['Código'] = 0
-    except requests.exceptions.Timeout:
-        datos_enlace['Estado'] = "⏳ TIMEOUT"
-        datos_enlace['Tipo'] = "Fallo Red"
-        datos_enlace['Código'] = 0
-    except Exception:
-        datos_enlace['Estado'] = "⚠️ ERROR DESCONOCIDO"
-        datos_enlace['Tipo'] = "Error"
-        datos_enlace['Código'] = 0
+            # --- AQUÍ OCURRE LA MAGIA DE LA LECTURA ---
+            if usar_profundo:
+                content_type = response.headers.get('Content-Type', '').lower()
+                extension = url.split('.')[-1].lower()
+                # Analizamos si es PDF o HTML
+                if 'pdf' in content_type or 'pdf' in extension or 'html' in content_type:
+                    resultado_lectura = analizar_contenido(response, extension, palabras)
+                    datos['Rastreador'] = resultado_lectura
+                else:
+                    datos['Rastreador'] = "Formato no legible (zip/img)"
+            else:
+                datos['Rastreador'] = "Lectura desactivada"
+                
+        elif response.status_code == 404:
+            datos['Estado'] = "❌ ROTO"
+            datos['Tipo'] = "Inaccesible"
+        else:
+            datos['Estado'] = f"⚠️ ({response.status_code})"
+            datos['Tipo'] = "Error"
+            
+    except Exception as e:
+        datos['Estado'] = "💀 ERROR"
+        datos['Tipo'] = "Fallo"
+        datos['Rastreador'] = "No se pudo conectar"
     finally:
         session.close()
-    return datos_enlace
+        
+    return datos
 
-# ==========================================
-# 📊 5. INTERFAZ PRINCIPAL
-# ==========================================
+# --- 5. INTERFAZ ---
 
-st.title("🧪 Laboratorio: Auditoría y Rastreo de Información")
-st.markdown("Herramienta experimental para análisis masivo de obligaciones de transparencia.")
+st.title("🧪 Laboratorio: Lector de Contenido Profundo")
+st.markdown("""
+Esta herramienta **descarga y lee** el contenido de los enlaces (PDFs y Webs) para encontrar información oculta 
+que no aparece en el nombre del archivo.
+""")
 
-if lista_palabras:
-    st.caption(f"📡 El Rastreador está buscando: {', '.join(lista_palabras)}")
+archivo_subido = st.file_uploader("Carga Excel (.xlsx)", type=["xlsx"])
 
-archivo_subido = st.file_uploader("Carga tu archivo Excel (.xlsx)", type=["xlsx"])
-
-if archivo_subido is not None:
-    st.success("Archivo cargado.")
+if archivo_subido and st.button("🚀 Iniciar Análisis Profundo"):
+    st.write("⚙️ Procesando... Esto puede tardar más de lo normal porque estamos leyendo los documentos.")
     
-    if st.button("🚀 Iniciar Análisis"):
-        st.write("⚙️ Ejecutando: Extracción + Rastreo de Texto + Verificación de Enlaces...")
-        wb = load_workbook(archivo_subido, data_only=False)
-        lista_cruda = []
+    wb = load_workbook(archivo_subido, data_only=True) # data_only=True ayuda a veces con fórmulas
+    lista_trabajo = []
+    
+    for hoja in wb.sheetnames:
+        ws = wb[hoja]
+        for row in ws.iter_rows():
+            for cell in row:
+                url = None
+                if cell.hyperlink:
+                    url = cell.hyperlink.target
+                elif isinstance(cell.value, str) and str(cell.value).startswith(('http', 'https')):
+                    url = cell.value
+                
+                if url:
+                    lista_trabajo.append({
+                        "Hoja": hoja,
+                        "Celda": cell.coordinate,
+                        "URL Original": url,
+                        "Palabras Clave": lista_palabras,
+                        "Usar Profundo": usar_lectura_profunda
+                    })
+    
+    total = len(lista_trabajo)
+    if total == 0:
+        st.warning("No se encontraron enlaces.")
+    else:
+        barra = st.progress(0)
+        estado = st.empty()
+        resultados = []
         
-        # --- FASE 1: EXTRACCIÓN Y RASTREO ---
-        for nombre_hoja in wb.sheetnames:
-            ws = wb[nombre_hoja]
-            for row in ws.iter_rows():
-                for cell in row:
-                    url_encontrada = None
-                    # Convertimos a string de forma segura
-                    texto_celda = str(cell.value).strip() if cell.value else ""
-                    
-                    if cell.hyperlink:
-                        url_encontrada = cell.hyperlink.target
-                    elif isinstance(cell.value, str) and str(cell.value).startswith(('http://', 'https://')):
-                        url_encontrada = cell.value
-                    
-                    if url_encontrada:
-                        # Lógica del Rastreador
-                        hallazgo = "Normal"
-                        # Convertimos todo a minúsculas para comparar
-                        texto_para_analizar = (texto_celda + " " + url_encontrada).lower()
-                        
-                        for palabra in lista_palabras:
-                            if palabra in texto_para_analizar:
-                                hallazgo = f"🔍 {palabra.upper()}"
-                                break
-                        
-                        lista_cruda.append({
-                            "Hoja": nombre_hoja,
-                            "Coordenada": cell.coordinate,
-                            "Texto Celda": texto_celda,
-                            "URL Original": url_encontrada,
-                            "Rastreador": hallazgo, # <--- Nombre actualizado
-                            "Estado": "Pendiente",
-                            "Tipo": "Pendiente",
-                            "Código": 0
-                        })
+        # Reducimos workers a 4 para no saturar memoria con los PDFs
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {executor.submit(procesar_enlace, item): item for item in lista_trabajo}
+            completados = 0
+            for future in concurrent.futures.as_completed(futures):
+                resultados.append(future.result())
+                completados += 1
+                barra.progress(int((completados/total)*100))
+                estado.text(f"Analizando documento {completados} de {total}...")
         
-        total_enlaces = len(lista_cruda)
+        barra.progress(100)
+        estado.success("✅ Análisis Profundo Terminado")
         
-        if total_enlaces == 0:
-            st.warning("No se encontraron enlaces en el archivo. (Recuerda: El Rastreador solo busca en celdas con hipervínculos).")
-        else:
-            # --- FASE 2: VERIFICACIÓN CONCURRENTE ---
-            barra = st.progress(0)
-            texto_estado = st.empty()
-            resultados_finales = []
+        df = pd.DataFrame(resultados)
+        
+        tab1, tab2 = st.tabs(["📄 Resultados", "📡 Hallazgos en Documentos"])
+        
+        with tab1:
+            st.dataframe(df)
+            st.download_button("Descargar CSV", df.to_csv(index=False).encode('utf-8'), "analisis_profundo.csv")
             
-            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-                futures = {executor.submit(verificar_un_enlace, item): item for item in lista_cruda}
-                completados = 0
-                for future in concurrent.futures.as_completed(futures):
-                    resultados_finales.append(future.result())
-                    completados += 1
-                    progreso = int((completados / total_enlaces) * 100)
-                    barra.progress(min(progreso, 100))
-                    if completados % 10 == 0:
-                        texto_estado.text(f"Auditando: {completados}/{total_enlaces}...")
-            
-            barra.progress(100)
-            texto_estado.success("✅ Proceso Completado.")
-            
-            df = pd.DataFrame(resultados_finales)
-            
-            # --- FASE 3: VISUALIZACIÓN (TABS) ---
-            st.write("---")
-            tab1, tab2, tab3 = st.tabs(["📄 Datos Detallados", "📡 Hallazgos del Rastreador", "📊 Tablero Gráfico"])
-            
-            # TAB 1
-            with tab1:
-                st.subheader("Base de Datos Completa")
-                st.dataframe(df)
-                csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Descargar Todo (CSV)", csv, "auditoria_completa_lab.csv", "text/csv")
-                
-            # TAB 2
-            with tab2:
-                st.subheader("Resultados del Rastreador")
-                df_sospechosos = df[df['Rastreador'].str.contains("🔍")]
-                
-                col_s1, col_s2 = st.columns(2)
-                col_s1.metric("Total Coincidencias", len(df_sospechosos))
-                
-                if not df_sospechosos.empty:
-                    conteo_palabras = df_sospechosos['Rastreador'].value_counts()
-                    col_s2.bar_chart(conteo_palabras) 
-                    st.error("Registros que contienen las palabras clave:")
-                    st.dataframe(df_sospechosos)
-                else:
-                    st.success("El Rastreador no encontró ninguna palabra clave EN LOS ENLACES analizados.")
-
-            # TAB 3
-            with tab3:
-                st.subheader("Análisis de Accesibilidad e Impacto")
-                
-                c_graf1, c_graf2 = st.columns(2)
-                
-                # Gráfico Pastel
-                with c_graf1:
-                    st.markdown("#### Índice Global")
-                    conteo_tipos = df['Tipo'].value_counts()
-                    fig1, ax1 = plt.subplots()
-                    colores = ['#66b3ff', '#ff9999', '#ffcc99', '#ff6666']
-                    ax1.pie(conteo_tipos, labels=conteo_tipos.index, autopct='%1.1f%%', startangle=90, colors=colores)
-                    ax1.axis('equal') 
-                    st.pyplot(fig1)
-
-                # Gráfico Barras (Errores)
-                with c_graf2:
-                    st.markdown("#### Taxonomía de Errores")
-                    df_errores = df[df['Tipo'] != "Accesible"]
-                    if not df_errores.empty:
-                        conteo_estados = df_errores['Estado'].value_counts()
-                        st.bar_chart(conteo_estados)
-                    else:
-                        st.info("Sin errores técnicos.")
-
-                st.write("---")
-                st.markdown("#### Mapa de Calor (Hojas vs Estado)")
-                pivot = pd.crosstab(df['Hoja'], df['Tipo'])
-                st.dataframe(pivot.style.background_gradient(cmap="Reds"))
-
-st.write("---")
-st.markdown("##### 🧪 MODO PRUEBAS - Rama: `pruebas`")
+        with tab2:
+            st.subheader("Documentos que contienen las palabras buscadas")
+            # Filtramos donde el rastreador encontró algo
+            encontrados = df[df['Rastreador'].str.contains("ENCONTRADO", na=False)]
+            st.metric("Documentos Positivos", len(encontrados))
+            if not encontrados.empty:
+                st.dataframe(encontrados)
+            else:
+                st.info("No se encontraron las palabras dentro de los documentos legibles.")
