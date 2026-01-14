@@ -14,16 +14,19 @@ st.set_page_config(page_title="Verificador - MODO PRUEBAS", page_icon="🧪", la
 # --- 2. BARRA LATERAL ---
 with st.sidebar:
     st.warning("⚠️ ESTÁS EN MODO PRUEBAS (LABORATORIO)")
-    st.header("🔍 Configuración del Sabueso")
+    st.header("🔍 Configuración del Rastreador")
     
     # --- CONFIGURACIÓN DE BÚSQUEDA ---
-    st.info("Escribe palabras clave para identificar información específica dentro del texto o la URL.")
-    texto_busqueda = st.text_area("Palabras a buscar:", value="reservado, confidencial, inexistente, prueba, vacio, no aplica")
+    st.info("ℹ️ INSTRUCCIONES: Escribe las palabras que deseas encontrar separadas por una coma.")
+    st.caption("Ejemplo: puente, contrato, nomina")
+    
+    texto_busqueda = st.text_area("Palabras a rastrear:", value="reservado, confidencial, inexistente, prueba, vacio, no aplica")
+    # Limpiamos y preparamos las palabras
     lista_palabras = [p.strip().lower() for p in texto_busqueda.split(',') if p.strip()]
     
     st.write("---")
     st.header("Sobre esta herramienta")
-    st.info("🎓 App desarrollada dentro del trabajo de doctorado de Fernando Gamez Reyes.")
+    st.info("🎓 App desarrollada dentro del trabajo de doctorado del Mtro. Fernando Gamez Reyes.")
     if st.button("🔒 Cerrar Sesión"):
         st.session_state.usuario_valido = False
         st.rerun()
@@ -104,32 +107,33 @@ def verificar_un_enlace(datos_enlace):
     return datos_enlace
 
 # ==========================================
-# 📊 5. INTERFAZ PRINCIPAL (ESTO FALTABA)
+# 📊 5. INTERFAZ PRINCIPAL
 # ==========================================
 
-st.title("🧪 Laboratorio Integral: Auditoría, Búsqueda y Gráficos")
+st.title("🧪 Laboratorio: Auditoría y Rastreo de Información")
 st.markdown("Herramienta experimental para análisis masivo de obligaciones de transparencia.")
 
 if lista_palabras:
-    st.caption(f"👀 El Sabueso está buscando: {', '.join(lista_palabras)}")
+    st.caption(f"📡 El Rastreador está buscando: {', '.join(lista_palabras)}")
 
 archivo_subido = st.file_uploader("Carga tu archivo Excel (.xlsx)", type=["xlsx"])
 
 if archivo_subido is not None:
     st.success("Archivo cargado.")
     
-    if st.button("🚀 Iniciar Super-Auditoría"):
-        st.write("⚙️ Ejecutando: Extracción + Búsqueda de Texto + Verificación de Enlaces...")
+    if st.button("🚀 Iniciar Análisis"):
+        st.write("⚙️ Ejecutando: Extracción + Rastreo de Texto + Verificación de Enlaces...")
         wb = load_workbook(archivo_subido, data_only=False)
         lista_cruda = []
         
-        # --- FASE 1: EXTRACCIÓN Y SABUESO ---
+        # --- FASE 1: EXTRACCIÓN Y RASTREO ---
         for nombre_hoja in wb.sheetnames:
             ws = wb[nombre_hoja]
             for row in ws.iter_rows():
                 for cell in row:
                     url_encontrada = None
-                    texto_celda = str(cell.value) if cell.value else ""
+                    # Convertimos a string de forma segura
+                    texto_celda = str(cell.value).strip() if cell.value else ""
                     
                     if cell.hyperlink:
                         url_encontrada = cell.hyperlink.target
@@ -137,9 +141,11 @@ if archivo_subido is not None:
                         url_encontrada = cell.value
                     
                     if url_encontrada:
-                        # Lógica del Sabueso
+                        # Lógica del Rastreador
                         hallazgo = "Normal"
+                        # Convertimos todo a minúsculas para comparar
                         texto_para_analizar = (texto_celda + " " + url_encontrada).lower()
+                        
                         for palabra in lista_palabras:
                             if palabra in texto_para_analizar:
                                 hallazgo = f"🔍 {palabra.upper()}"
@@ -150,7 +156,7 @@ if archivo_subido is not None:
                             "Coordenada": cell.coordinate,
                             "Texto Celda": texto_celda,
                             "URL Original": url_encontrada,
-                            "Sabueso": hallazgo,
+                            "Rastreador": hallazgo, # <--- Nombre actualizado
                             "Estado": "Pendiente",
                             "Tipo": "Pendiente",
                             "Código": 0
@@ -159,7 +165,7 @@ if archivo_subido is not None:
         total_enlaces = len(lista_cruda)
         
         if total_enlaces == 0:
-            st.warning("No se encontraron enlaces.")
+            st.warning("No se encontraron enlaces en el archivo. (Recuerda: El Rastreador solo busca en celdas con hipervínculos).")
         else:
             # --- FASE 2: VERIFICACIÓN CONCURRENTE ---
             barra = st.progress(0)
@@ -184,7 +190,7 @@ if archivo_subido is not None:
             
             # --- FASE 3: VISUALIZACIÓN (TABS) ---
             st.write("---")
-            tab1, tab2, tab3 = st.tabs(["📄 Datos Detallados", "🕵️‍♂️ Hallazgos del Sabueso", "📊 Tablero Gráfico"])
+            tab1, tab2, tab3 = st.tabs(["📄 Datos Detallados", "📡 Hallazgos del Rastreador", "📊 Tablero Gráfico"])
             
             # TAB 1
             with tab1:
@@ -195,19 +201,19 @@ if archivo_subido is not None:
                 
             # TAB 2
             with tab2:
-                st.subheader("Resultados de Búsqueda de Texto")
-                df_sospechosos = df[df['Sabueso'].str.contains("🔍")]
+                st.subheader("Resultados del Rastreador")
+                df_sospechosos = df[df['Rastreador'].str.contains("🔍")]
                 
                 col_s1, col_s2 = st.columns(2)
                 col_s1.metric("Total Coincidencias", len(df_sospechosos))
                 
                 if not df_sospechosos.empty:
-                    conteo_palabras = df_sospechosos['Sabueso'].value_counts()
-                    st.bar_chart(conteo_palabras) # Versión simple de streamlit para evitar errores
+                    conteo_palabras = df_sospechosos['Rastreador'].value_counts()
+                    col_s2.bar_chart(conteo_palabras) 
                     st.error("Registros que contienen las palabras clave:")
                     st.dataframe(df_sospechosos)
                 else:
-                    st.success("El Sabueso no encontró ninguna palabra clave en los registros.")
+                    st.success("El Rastreador no encontró ninguna palabra clave EN LOS ENLACES analizados.")
 
             # TAB 3
             with tab3:
