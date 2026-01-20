@@ -15,15 +15,20 @@ import gc
 import os
 import csv
 
-# --- 1. CONFIGURACIÓN DE LA PÁGINA ---
-st.set_page_config(page_title="Laboratorio Streaming", page_icon="💾", layout="wide")
+# --- 1. CONFIGURACIÓN ---
+st.set_page_config(page_title="Laboratorio Automático", page_icon="🤖", layout="wide")
 
 # --- 2. BARRA LATERAL ---
 with st.sidebar:
-    st.warning("⚠️ MODO LABORATORIO (STREAMING)")
-    st.header("🎛️ Panel de Control")
+    st.warning("⚠️ MODO LABORATORIO (AUTOMÁTICO)")
+    st.header("⚙️ Configuración")
     
-    act_auditoria = st.checkbox("🛠️ Auditar Formatos y Calidad", value=True)
+    # CONTROL DE LOTES AUTOMÁTICO
+    st.info("El sistema procesará el archivo en bloques para proteger la memoria.")
+    batch_size = st.number_input("Tamaño del Bloque (Registros por ronda):", min_value=100, max_value=2000, value=1000, step=100)
+    
+    st.write("---")
+    act_auditoria = st.checkbox("🛠️ Auditar Formatos", value=True)
     act_busqueda = st.checkbox("🕵️‍♂️ Buscar Contenido", value=True)
     
     if act_busqueda:
@@ -33,16 +38,16 @@ with st.sidebar:
         lista_palabras = []
 
     st.write("---")
-    st.header("⚙️ Rendimiento")
-    num_robots = st.number_input("🤖 Robots (Hilos)", min_value=1, max_value=8, value=4)
-    modo_sigilo = st.checkbox("🐢 Pausa de Sigilo", value=False)
+    num_robots = st.number_input("🤖 Robots Simultáneos", min_value=1, max_value=8, value=4)
+    modo_sigilo = st.checkbox("🐢 Pausa Sigilo", value=False)
     
-    if st.button("🗑️ Borrar Temporales"):
-        if os.path.exists("resultados_parciales.csv"):
-            os.remove("resultados_parciales.csv")
-            st.success("Temporales borrados.")
+    if st.button("🗑️ Reiniciar Auditoría (Borrar datos)"):
+        if os.path.exists("resultados_acumulados.csv"):
+            os.remove("resultados_acumulados.csv")
+            st.success("Memoria borrada. Listo para empezar de cero.")
+            time.sleep(1)
+            st.rerun()
 
-    st.write("---")
     if st.button("🔒 Cerrar Sesión"):
         st.session_state.usuario_valido = False
         st.rerun()
@@ -62,7 +67,7 @@ if not st.session_state.usuario_valido:
             st.error("⛔ Incorrecto")
     st.stop()
 
-# --- 4. FUNCIONES DE LÓGICA ---
+# --- 4. LÓGICA TÉCNICA ---
 def crear_sesion_segura():
     session = requests.Session()
     retry = Retry(total=2, backoff_factor=0.5, status_forcelist=[500, 502, 503, 504])
@@ -80,11 +85,9 @@ def auditar_archivo(response, url, realizar_busqueda, palabras_clave):
         ext = url.split('.')[-1].lower()
         es_legible = False
         
-        # 1. Datos Estructurados
         if any(f in ext or f in content_type for f in ['xml', 'json', 'rdf', 'csv']):
             calidad = f"✅ Formato Abierto ({ext.upper()})"
             es_legible = True 
-        # 2. PDF
         elif 'pdf' in ext or 'application/pdf' in content_type:
             try:
                 with io.BytesIO(response.content) as f:
@@ -100,7 +103,6 @@ def auditar_archivo(response, url, realizar_busqueda, palabras_clave):
                     calidad = "⚠️ PDF Imagen (Requiere OCR)"
             except:
                 calidad = "❌ PDF Dañado"
-        # 3. HTML
         elif 'html' in ext or 'text/html' in content_type:
             try:
                 soup = BeautifulSoup(response.content, 'html.parser')
@@ -135,15 +137,10 @@ def procesar_enlace(datos):
     palabras = datos['Palabras Clave']
     headers = {'User-Agent': 'Mozilla/5.0'}
     
-    resultado = {
-        "Hoja": datos["Hoja"],
-        "Celda": datos["Celda"],
-        "URL Original": url,
-        "Estado": "Desconocido",
-        "Código": 0,
-        "Tipo": "Pendiente",
-        "Formato": "Off",
-        "Contenido": "Off"
+    res = {
+        "Hoja": datos["Hoja"], "Celda": datos["Celda"], "URL Original": url,
+        "Estado": "Desconocido", "Código": 0, "Tipo": "Pendiente",
+        "Formato": "Off", "Contenido": "Off"
     }
     
     session = None
@@ -157,57 +154,56 @@ def procesar_enlace(datos):
             if response.status_code == 405:
                 response = session.get(url, headers=headers, timeout=5, stream=True)
 
-        resultado['Código'] = response.status_code
+        res['Código'] = response.status_code
         if response.status_code == 200:
-            resultado['Estado'] = "✅ ACTIVO"
-            resultado['Tipo'] = "Accesible"
+            res['Estado'] = "✅ ACTIVO"
+            res['Tipo'] = "Accesible"
             if necesita_descarga:
-                res_calidad, res_hallazgos = auditar_archivo(response, url, act_busqueda, palabras)
-                if act_auditoria: resultado['Formato'] = res_calidad
-                if act_busqueda: resultado['Contenido'] = res_hallazgos
+                cal, hal = auditar_archivo(response, url, act_busqueda, palabras)
+                if act_auditoria: res['Formato'] = cal
+                if act_busqueda: res['Contenido'] = hal
         elif response.status_code == 404:
-            resultado['Estado'] = "❌ ROTO"
-            resultado['Tipo'] = "Inaccesible"
+            res['Estado'] = "❌ ROTO"
+            res['Tipo'] = "Inaccesible"
         else:
-            resultado['Estado'] = f"⚠️ ({response.status_code})"
-            resultado['Tipo'] = "Error"
+            res['Estado'] = f"⚠️ ({response.status_code})"
+            res['Tipo'] = "Error"
     except:
-        resultado['Estado'] = "💀 ERROR"
-        resultado['Tipo'] = "Fallo"
+        res['Estado'] = "💀 ERROR"
+        res['Tipo'] = "Fallo"
     finally:
         if session: session.close()
         del session
-        gc.collect()
         
-    return resultado
+    return res
 
 # --- 5. INTERFAZ PRINCIPAL ---
-st.title("💾 Laboratorio: Auditoría con Autoguardado")
-st.markdown("Los resultados se guardan en un archivo temporal en tiempo real para evitar pérdidas por reinicio.")
+st.title("🤖 Laboratorio: Procesamiento Automático por Lotes")
+st.markdown("El sistema dividirá el archivo y procesará bloque por bloque automáticamente para proteger la memoria.")
 
 archivo_subido = st.file_uploader("Carga Excel (.xlsx)", type=["xlsx"])
+archivo_temp = "resultados_acumulados.csv"
 
-# Verificación de archivo temporal existente
-archivo_temp = "resultados_parciales.csv"
+# Mostrar avance si existe
 if os.path.exists(archivo_temp):
-    st.info("📂 Se encontró un archivo de resultados previos.")
     df_previo = pd.read_csv(archivo_temp)
-    st.write(f"Registros recuperados: {len(df_previo)}")
-    st.dataframe(df_previo.tail(3))
-    st.download_button("Descargar lo que llevamos", df_previo.to_csv(index=False).encode('utf-8'), "avance_recuperado.csv")
+    st.info(f"📂 Archivo de respaldo detectado con {len(df_previo)} registros procesados.")
+    if st.button("📥 Descargar Avance Actual"):
+        # Generar CSV string para descarga
+        csv = df_previo.to_csv(index=False).encode('utf-8')
+        st.download_button("Guardar CSV", csv, "avance_actual.csv")
 
-if archivo_subido and st.button("🚀 Iniciar / Continuar Proceso"):
-    # Inicializar CSV si no existe
+if archivo_subido and st.button("🚀 Iniciar Ciclo Automático"):
+    # 1. Crear el CSV vacío si no existe
     if not os.path.exists(archivo_temp):
         with open(archivo_temp, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerow(["Hoja", "Celda", "URL Original", "Estado", "Código", "Tipo", "Formato", "Contenido"])
-
-    # Cargar Excel (Solo lectura para ahorrar RAM)
+            
+    # 2. Leer Excel Completo
     wb = load_workbook(archivo_subido, data_only=True, read_only=False)
-    lista_trabajo = []
-    
-    st.write("⚙️ Leyendo Excel...")
+    lista_total = []
+    st.write("⚙️ Analizando estructura del archivo...")
     for hoja in wb.sheetnames:
         ws = wb[hoja]
         for row in ws.iter_rows():
@@ -217,56 +213,79 @@ if archivo_subido and st.button("🚀 Iniciar / Continuar Proceso"):
                 elif isinstance(cell.value, str) and str(cell.value).startswith(('http', 'https')): url = cell.value
                 
                 if url:
-                    lista_trabajo.append({
-                        "Hoja": hoja,
-                        "Celda": cell.coordinate,
-                        "URL Original": url,
-                        "Activar Auditoría": act_auditoria,
-                        "Activar Búsqueda": act_busqueda,
-                        "Palabras Clave": lista_palabras,
-                        "Sigilo": modo_sigilo
+                    lista_total.append({
+                        "Hoja": hoja, "Celda": cell.coordinate, "URL Original": url,
+                        "Activar Auditoría": act_auditoria, "Activar Búsqueda": act_busqueda,
+                        "Palabras Clave": lista_palabras, "Sigilo": modo_sigilo
                     })
     wb.close()
     del wb
-    gc.collect()
-
-    total = len(lista_trabajo)
-    st.success(f"Matriz cargada: {total} enlaces.")
+    gc.collect() # Limpieza inicial
     
-    # Barra de progreso
-    barra = st.progress(0)
-    estado = st.empty()
+    total_enlaces = len(lista_total)
+    st.success(f"📋 Total detectado: {total_enlaces} enlaces.")
     
-    # EJECUCIÓN
-    completados = 0
-    with open(archivo_temp, 'a', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=["Hoja", "Celda", "URL Original", "Estado", "Código", "Tipo", "Formato", "Contenido"])
-        
-        with concurrent.futures.ThreadPoolExecutor(max_workers=num_robots) as executor:
-            futures = {executor.submit(procesar_enlace, item): item for item in lista_trabajo}
+    # 3. Calcular qué falta por hacer
+    procesados_count = 0
+    if os.path.exists(archivo_temp):
+        # Contamos cuántas líneas tiene el CSV (restando encabezado)
+        with open(archivo_temp, 'r', encoding='utf-8') as f:
+            procesados_count = sum(1 for row in f) - 1
+            if procesados_count < 0: procesados_count = 0
             
-            for future in concurrent.futures.as_completed(futures):
-                res = future.result()
-                
-                # Escribimos AL INSTANTE en el disco
-                writer.writerow(res)
-                # Forzamos que se guarde en disco ya
-                f.flush() 
-                
-                completados += 1
-                if completados % 10 == 0:
-                    progreso = int((completados/total)*100)
-                    barra.progress(min(progreso, 100))
-                    estado.text(f"Guardando {completados}/{total} en disco...")
-                    
-                # Limpieza de memoria cada 50 items
-                if completados % 50 == 0:
-                    gc.collect()
-
-    barra.progress(100)
-    estado.success("✅ Proceso Finalizado y Guardado")
+    st.write(f"📊 Ya procesados: {procesados_count}. Faltan: {total_enlaces - procesados_count}.")
     
-    # Cargar resultado final para mostrar
-    df_final = pd.read_csv(archivo_temp)
-    st.dataframe(df_final)
-    st.download_button("Descargar CSV Final", df_final.to_csv(index=False).encode('utf-8'), "auditoria_completa.csv")
+    if procesados_count >= total_enlaces:
+        st.success("✅ ¡El archivo ya está completamente procesado!")
+    else:
+        # 4. CICLO DE LOTES AUTOMÁTICO
+        lista_pendiente = lista_total[procesados_count:] # Solo lo que falta
+        total_pendiente = len(lista_pendiente)
+        
+        # Dividimos en chunks
+        chunks = [lista_pendiente[i:i + batch_size] for i in range(0, total_pendiente, batch_size)]
+        
+        barra_general = st.progress(0)
+        estado_general = st.empty()
+        
+        # Iteramos sobre los lotes
+        for i, chunk in enumerate(chunks):
+            lote_num = i + 1
+            total_lotes = len(chunks)
+            estado_general.markdown(f"### 🔄 Procesando Lote {lote_num} de {total_lotes} ({len(chunk)} enlaces)...")
+            
+            # --- PROCESAMIENTO DEL LOTE ---
+            with open(archivo_temp, 'a', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=["Hoja", "Celda", "URL Original", "Estado", "Código", "Tipo", "Formato", "Contenido"])
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=num_robots) as executor:
+                    futures = {executor.submit(procesar_enlace, item): item for item in chunk}
+                    
+                    completados_lote = 0
+                    barra_lote = st.progress(0)
+                    
+                    for future in concurrent.futures.as_completed(futures):
+                        res = future.result()
+                        writer.writerow(res)
+                        
+                        completados_lote += 1
+                        barra_lote.progress(int((completados_lote/len(chunk))*100))
+                
+                # Forzamos escritura en disco al terminar el lote
+                f.flush()
+            
+            # --- LIMPIEZA DE MEMORIA ---
+            del futures
+            gc.collect() # ¡Limpieza profunda!
+            st.toast(f"✅ Lote {lote_num} guardado y memoria limpia.")
+            
+            # Actualizar barra general
+            progreso_general = int(((i + 1) / total_lotes) * 100)
+            barra_general.progress(min(progreso_general, 100))
+            
+        estado_general.success("🎉 ¡Proceso Completo!")
+        
+        # Mostrar resultado final
+        df_final = pd.read_csv(archivo_temp)
+        st.dataframe(df_final)
+        st.download_button("📥 Descargar Reporte Final Completo", df_final.to_csv(index=False).encode('utf-8'), "auditoria_final.csv")
