@@ -11,42 +11,38 @@ from pypdf import PdfReader
 from bs4 import BeautifulSoup
 import time
 import random
-import gc  # <--- NUEVO: Recolector de Basura (El camión de la basura de la RAM)
+import gc
+import os
+import csv
 
 # --- 1. CONFIGURACIÓN DE LA PÁGINA ---
-st.set_page_config(page_title="Laboratorio Modular", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="Laboratorio Streaming", page_icon="💾", layout="wide")
 
 # --- 2. BARRA LATERAL ---
 with st.sidebar:
-    st.warning("⚠️ MODO LABORATORIO (ESTABILIDAD)")
-    
+    st.warning("⚠️ MODO LABORATORIO (STREAMING)")
     st.header("🎛️ Panel de Control")
-    st.markdown("Selecciona herramientas:")
     
-    # --- INTERRUPTORES ---
     act_auditoria = st.checkbox("🛠️ Auditar Formatos y Calidad", value=True)
     act_busqueda = st.checkbox("🕵️‍♂️ Buscar Contenido", value=True)
     
-    st.write("---")
-    
     if act_busqueda:
-        st.info("ℹ️ Configuración de Búsqueda:")
         texto_busqueda = st.text_area("Palabras a buscar:", value="puente, contrato, licitacion")
         lista_palabras = [p.strip().lower() for p in texto_busqueda.split(',') if p.strip()]
     else:
         lista_palabras = []
 
     st.write("---")
-    st.caption("🚀 GESTIÓN DE RECURSOS")
-    modo_sigilo = st.checkbox("🐢 Modo Sigilo (Anti-bloqueo)", value=False)
+    st.header("⚙️ Rendimiento")
+    num_robots = st.number_input("🤖 Robots (Hilos)", min_value=1, max_value=8, value=4)
+    modo_sigilo = st.checkbox("🐢 Pausa de Sigilo", value=False)
     
-    # NUEVO: Control de Lotes para evitar crash
-    st.caption("📦 TAMAÑO DEL LOTE (Memoria)")
-    batch_size = st.slider("Enlaces por lote (Bajar si se reinicia):", min_value=10, max_value=100, value=50)
+    if st.button("🗑️ Borrar Temporales"):
+        if os.path.exists("resultados_parciales.csv"):
+            os.remove("resultados_parciales.csv")
+            st.success("Temporales borrados.")
 
     st.write("---")
-    st.info("🎓 App desarrollada dentro del trabajo de doctorado del Mtro. Fernando Gamez Reyes.")
-    
     if st.button("🔒 Cerrar Sesión"):
         st.session_state.usuario_valido = False
         st.rerun()
@@ -66,10 +62,10 @@ if not st.session_state.usuario_valido:
             st.error("⛔ Incorrecto")
     st.stop()
 
-# --- 4. LÓGICA DEL SISTEMA ---
+# --- 4. FUNCIONES DE LÓGICA ---
 def crear_sesion_segura():
     session = requests.Session()
-    retry = Retry(total=2, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+    retry = Retry(total=2, backoff_factor=0.5, status_forcelist=[500, 502, 503, 504])
     session.mount('http://', HTTPAdapter(max_retries=retry))
     session.mount('https://', HTTPAdapter(max_retries=retry))
     return session
@@ -78,45 +74,37 @@ def auditar_archivo(response, url, realizar_busqueda, palabras_clave):
     calidad = "No solicitado"
     hallazgos = "No solicitado"
     texto_extraido = ""
-    
     try:
         headers = response.headers
         content_type = headers.get('Content-Type', '').lower()
         ext = url.split('.')[-1].lower()
-        
         es_legible = False
         
         # 1. Datos Estructurados
-        formatos_datos = ['xml', 'json', 'rdf', 'csv']
-        if any(f in ext for f in formatos_datos) or any(f in content_type for f in formatos_datos):
+        if any(f in ext or f in content_type for f in ['xml', 'json', 'rdf', 'csv']):
             calidad = f"✅ Formato Abierto ({ext.upper()})"
             es_legible = True 
-        
         # 2. PDF
         elif 'pdf' in ext or 'application/pdf' in content_type:
             try:
-                with io.BytesIO(response.content) as f: # Context manager para liberar memoria rápido
+                with io.BytesIO(response.content) as f:
                     reader = PdfReader(f)
-                    limit = min(3, len(reader.pages)) 
+                    limit = min(2, len(reader.pages)) 
                     for i in range(limit):
                         page_text = reader.pages[i].extract_text()
-                        if page_text:
-                            texto_extraido += page_text + " "
-                
+                        if page_text: texto_extraido += page_text + " "
                 if len(texto_extraido.strip()) > 5:
                     calidad = "✅ PDF Texto (Abierto)"
                     es_legible = True
                 else:
                     calidad = "⚠️ PDF Imagen (Requiere OCR)"
-                    es_legible = False
             except:
                 calidad = "❌ PDF Dañado"
-                
         # 3. HTML
         elif 'html' in ext or 'text/html' in content_type:
             try:
                 soup = BeautifulSoup(response.content, 'html.parser')
-                texto_extraido = soup.get_text()
+                texto_extraido = soup.get_text()[:5000]
                 calidad = "✅ Sitio Web (HTML)"
                 es_legible = True
             except:
@@ -124,104 +112,109 @@ def auditar_archivo(response, url, realizar_busqueda, palabras_clave):
         else:
             calidad = f"⚠️ Formato No Estándar ({ext.upper()})"
 
-        # BÚSQUEDA
         if realizar_busqueda:
             lista_hallazgos = []
             if es_legible and texto_extraido:
                 texto_norm = texto_extraido.lower()
                 for palabra in palabras_clave:
-                    if palabra in texto_norm:
-                        lista_hallazgos.append(palabra.upper())
+                    if palabra in texto_norm: lista_hallazgos.append(palabra.upper())
                 hallazgos = f"✅ ENCONTRADO: {', '.join(lista_hallazgos)}" if lista_hallazgos else "Sin coincidencias"
             elif not es_legible and "PDF Imagen" in calidad:
                 hallazgos = "❌ Imposible leer (Es imagen)"
             else:
                 hallazgos = "No legible / Sin texto"
-                
-    except Exception as e:
+    except:
         calidad = "Error Procesando"
-    
     return calidad, hallazgos
 
 def procesar_enlace(datos):
-    if datos['Sigilo']:
-        time.sleep(random.uniform(0.5, 2.0))
-    
+    if datos['Sigilo']: time.sleep(random.uniform(0.5, 1.5))
     url = datos['URL Original']
     act_auditoria = datos['Activar Auditoría']
     act_busqueda = datos['Activar Búsqueda']
     palabras = datos['Palabras Clave']
+    headers = {'User-Agent': 'Mozilla/5.0'}
     
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-    
-    datos['Estado'] = "Desconocido"
-    datos['Formato'] = "Off"
-    datos['Contenido'] = "Off"
+    resultado = {
+        "Hoja": datos["Hoja"],
+        "Celda": datos["Celda"],
+        "URL Original": url,
+        "Estado": "Desconocido",
+        "Código": 0,
+        "Tipo": "Pendiente",
+        "Formato": "Off",
+        "Contenido": "Off"
+    }
     
     session = None
     try:
         session = crear_sesion_segura()
         necesita_descarga = act_auditoria or act_busqueda
-        
         if necesita_descarga:
-            # Stream=False descarga todo a memoria. Peligroso pero necesario para pypdf.
-            response = session.get(url, headers=headers, timeout=15, stream=False)
+            response = session.get(url, headers=headers, timeout=10, stream=False)
         else:
             response = session.head(url, headers=headers, timeout=5, allow_redirects=True)
             if response.status_code == 405:
                 response = session.get(url, headers=headers, timeout=5, stream=True)
 
-        datos['Código'] = response.status_code
-        
+        resultado['Código'] = response.status_code
         if response.status_code == 200:
-            datos['Estado'] = "✅ ACTIVO"
-            datos['Tipo'] = "Accesible"
-            
+            resultado['Estado'] = "✅ ACTIVO"
+            resultado['Tipo'] = "Accesible"
             if necesita_descarga:
                 res_calidad, res_hallazgos = auditar_archivo(response, url, act_busqueda, palabras)
-                if act_auditoria: datos['Formato'] = res_calidad
-                if act_busqueda: datos['Contenido'] = res_hallazgos
-            
+                if act_auditoria: resultado['Formato'] = res_calidad
+                if act_busqueda: resultado['Contenido'] = res_hallazgos
         elif response.status_code == 404:
-            datos['Estado'] = "❌ ROTO"
-            datos['Tipo'] = "Inaccesible"
+            resultado['Estado'] = "❌ ROTO"
+            resultado['Tipo'] = "Inaccesible"
         else:
-            datos['Estado'] = f"⚠️ ({response.status_code})"
-            datos['Tipo'] = "Error"
-            
-    except Exception:
-        datos['Estado'] = "💀 ERROR"
-        datos['Tipo'] = "Fallo"
-        datos['Formato'] = "Error Conexión"
+            resultado['Estado'] = f"⚠️ ({response.status_code})"
+            resultado['Tipo'] = "Error"
+    except:
+        resultado['Estado'] = "💀 ERROR"
+        resultado['Tipo'] = "Fallo"
     finally:
         if session: session.close()
+        del session
+        gc.collect()
         
-    return datos
+    return resultado
 
 # --- 5. INTERFAZ PRINCIPAL ---
-
-st.title("🛡️ Laboratorio Estable (Anti-Crash)")
-st.markdown("""
-**Sistema optimizado para grandes volúmenes de datos.**
-Se utiliza procesamiento por lotes para evitar desbordamiento de memoria.
-""")
+st.title("💾 Laboratorio: Auditoría con Autoguardado")
+st.markdown("Los resultados se guardan en un archivo temporal en tiempo real para evitar pérdidas por reinicio.")
 
 archivo_subido = st.file_uploader("Carga Excel (.xlsx)", type=["xlsx"])
 
-if archivo_subido and st.button("🚀 Iniciar Proceso Seguro"):
-    wb = load_workbook(archivo_subido, data_only=True)
+# Verificación de archivo temporal existente
+archivo_temp = "resultados_parciales.csv"
+if os.path.exists(archivo_temp):
+    st.info("📂 Se encontró un archivo de resultados previos.")
+    df_previo = pd.read_csv(archivo_temp)
+    st.write(f"Registros recuperados: {len(df_previo)}")
+    st.dataframe(df_previo.tail(3))
+    st.download_button("Descargar lo que llevamos", df_previo.to_csv(index=False).encode('utf-8'), "avance_recuperado.csv")
+
+if archivo_subido and st.button("🚀 Iniciar / Continuar Proceso"):
+    # Inicializar CSV si no existe
+    if not os.path.exists(archivo_temp):
+        with open(archivo_temp, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(["Hoja", "Celda", "URL Original", "Estado", "Código", "Tipo", "Formato", "Contenido"])
+
+    # Cargar Excel (Solo lectura para ahorrar RAM)
+    wb = load_workbook(archivo_subido, data_only=True, read_only=False)
     lista_trabajo = []
     
-    st.write("⚙️ Preparando matriz...")
+    st.write("⚙️ Leyendo Excel...")
     for hoja in wb.sheetnames:
         ws = wb[hoja]
         for row in ws.iter_rows():
             for cell in row:
                 url = None
-                if cell.hyperlink:
-                    url = cell.hyperlink.target
-                elif isinstance(cell.value, str) and str(cell.value).startswith(('http', 'https')):
-                    url = cell.value
+                if cell.hyperlink: url = cell.hyperlink.target
+                elif isinstance(cell.value, str) and str(cell.value).startswith(('http', 'https')): url = cell.value
                 
                 if url:
                     lista_trabajo.append({
@@ -233,87 +226,47 @@ if archivo_subido and st.button("🚀 Iniciar Proceso Seguro"):
                         "Palabras Clave": lista_palabras,
                         "Sigilo": modo_sigilo
                     })
-    
-    total = len(lista_trabajo)
-    if total == 0:
-        st.warning("No se encontraron enlaces.")
-    else:
-        # 1. Ajuste Dinámico de Workers (Seguridad ante todo)
-        if modo_sigilo:
-            workers = 2
-        elif act_busqueda or act_auditoria:
-            # Si hay lectura pesada, limitamos workers para proteger RAM
-            workers = 4 
-            st.info("ℹ️ Modo de Lectura Profunda activo: Se limitan los robots a 4 para proteger la memoria.")
-        else:
-            workers = 10 # Si es solo check, volamos
-        
-        # 2. PROCESAMIENTO POR LOTES (La clave anti-reinicio)
-        resultados = []
-        barra = st.progress(0)
-        estado = st.empty()
-        
-        # Dividimos la lista gigante en trozos pequeños (chunks)
-        chunks = [lista_trabajo[i:i + batch_size] for i in range(0, total, batch_size)]
-        
-        st.write(f"📦 Procesando en {len(chunks)} lotes de {batch_size} archivos para estabilidad...")
-        
-        completados_global = 0
-        
-        for i, chunk in enumerate(chunks):
-            estado.text(f"⏳ Procesando Lote {i+1}/{len(chunks)}...")
-            
-            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-                futures = {executor.submit(procesar_enlace, item): item for item in chunk}
-                for future in concurrent.futures.as_completed(futures):
-                    resultados.append(future.result())
-                    completados_global += 1
-                    progreso = int((completados_global/total)*100)
-                    barra.progress(min(progreso, 100))
-            
-            # --- LIMPIEZA DE MEMORIA ---
-            # Al terminar un lote, forzamos la limpieza de RAM
-            gc.collect() 
-            # ---------------------------
+    wb.close()
+    del wb
+    gc.collect()
 
-        barra.progress(100)
-        estado.success("✅ Proceso Finalizado con Éxito")
-        df = pd.DataFrame(resultados)
+    total = len(lista_trabajo)
+    st.success(f"Matriz cargada: {total} enlaces.")
+    
+    # Barra de progreso
+    barra = st.progress(0)
+    estado = st.empty()
+    
+    # EJECUCIÓN
+    completados = 0
+    with open(archivo_temp, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=["Hoja", "Celda", "URL Original", "Estado", "Código", "Tipo", "Formato", "Contenido"])
         
-        # --- PESTAÑAS ---
-        tabs_titulos = ["📄 Resultados Generales", "📊 Gráficos"]
-        if act_auditoria: tabs_titulos.insert(1, "🛠️ Detalles Técnicos")
-        if act_busqueda: tabs_titulos.insert(2, "🕵️‍♂️ Hallazgos de Contenido")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_robots) as executor:
+            futures = {executor.submit(procesar_enlace, item): item for item in lista_trabajo}
             
-        tabs = st.tabs(tabs_titulos)
-        
-        with tabs[0]:
-            st.dataframe(df)
-            st.download_button("Descargar CSV", df.to_csv(index=False).encode('utf-8'), "auditoria_segura.csv")
-            
-        idx = 1
-        if act_auditoria:
-            with tabs[idx]:
-                st.subheader("Análisis de Formatos")
-                c1, c2 = st.columns(2)
-                c1.warning("⚠️ Requieren OCR (Imagen):")
-                c1.dataframe(df[df['Formato'].str.contains("Imagen", na=False)])
-                c2.error("❌ Formatos No Estándar:")
-                c2.dataframe(df[df['Formato'].str.contains("No Estándar", na=False)])
-            idx += 1
-            
-        if act_busqueda:
-            with tabs[idx]:
-                st.subheader("Coincidencias de Texto")
-                encontrados = df[df['Contenido'].str.contains("ENCONTRADO", na=False)]
-                st.metric("Documentos Positivos", len(encontrados))
-                st.dataframe(encontrados)
-            idx += 1
-            
-        with tabs[idx]:
-            c_g1, c_g2 = st.columns(2)
-            c_g1.markdown("#### Disponibilidad")
-            st.bar_chart(df['Estado'].value_counts())
-            if act_auditoria:
-                c_g2.markdown("#### Calidad")
-                st.bar_chart(df['Formato'].value_counts())
+            for future in concurrent.futures.as_completed(futures):
+                res = future.result()
+                
+                # Escribimos AL INSTANTE en el disco
+                writer.writerow(res)
+                # Forzamos que se guarde en disco ya
+                f.flush() 
+                
+                completados += 1
+                if completados % 10 == 0:
+                    progreso = int((completados/total)*100)
+                    barra.progress(min(progreso, 100))
+                    estado.text(f"Guardando {completados}/{total} en disco...")
+                    
+                # Limpieza de memoria cada 50 items
+                if completados % 50 == 0:
+                    gc.collect()
+
+    barra.progress(100)
+    estado.success("✅ Proceso Finalizado y Guardado")
+    
+    # Cargar resultado final para mostrar
+    df_final = pd.read_csv(archivo_temp)
+    st.dataframe(df_final)
+    st.download_button("Descargar CSV Final", df_final.to_csv(index=False).encode('utf-8'), "auditoria_completa.csv")
