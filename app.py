@@ -83,14 +83,13 @@ def auditar_archivo(response, url, realizar_busqueda, palabras_clave):
     ext = url.split('.')[-1].lower()
     
     # --- FASE 1: AUDITORÍA TÉCNICA (Si se solicita) ---
-    # Detectamos formato y calidad OCR
     es_legible = False
     
     # 1. Datos Estructurados
     formatos_datos = ['xml', 'json', 'rdf', 'csv']
     if any(f in ext for f in formatos_datos) or any(f in content_type for f in formatos_datos):
         calidad = f"✅ Formato Abierto ({ext.upper()})"
-        es_legible = True # Podríamos leerlo si quisiéramos
+        es_legible = True 
     
     # 2. PDF
     elif 'pdf' in ext or 'application/pdf' in content_type:
@@ -142,7 +141,6 @@ def auditar_archivo(response, url, realizar_busqueda, palabras_clave):
     return calidad, hallazgos
 
 def procesar_enlace(datos):
-    # Pausa de Sigilo
     if datos['Sigilo']:
         time.sleep(random.uniform(0.5, 2.0))
     
@@ -159,16 +157,12 @@ def procesar_enlace(datos):
     datos['Contenido'] = "Off"
     
     try:
-        # OPTIMIZACIÓN INTELIGENTE:
-        # Si NO pedimos auditoría NI búsqueda, usamos HEAD (Ultra rápido, no descarga).
-        # Si pedimos CUALQUIERA de las dos, necesitamos GET (Descargar archivo).
         necesita_descarga = act_auditoria or act_busqueda
         
         if necesita_descarga:
             response = session.get(url, headers=headers, timeout=15, stream=False)
         else:
             response = session.head(url, headers=headers, timeout=5, allow_redirects=True)
-            # Si el servidor rechaza HEAD (405), intentamos GET ligero
             if response.status_code == 405:
                 response = session.get(url, headers=headers, timeout=5, stream=True)
 
@@ -178,13 +172,10 @@ def procesar_enlace(datos):
             datos['Estado'] = "✅ ACTIVO"
             datos['Tipo'] = "Accesible"
             
-            # Solo ejecutamos lógica pesada si el usuario activó los interruptores
             calidad = "No analizado"
             hallazgos = "No analizado"
             
             if necesita_descarga:
-                # Si se pidió auditoría, se procesa. Si se pidió búsqueda, también.
-                # Pasamos 'act_busqueda' para que la función sepa si debe buscar palabras o no.
                 res_calidad, res_hallazgos = auditar_archivo(response, url, act_busqueda, palabras)
                 
                 if act_auditoria:
@@ -215,7 +206,7 @@ st.markdown("""
 **Personaliza tu auditoría según el tiempo disponible:**
 * **Solo Verificación:** Ultrarápido. Solo comprueba disponibilidad.
 * **+ Auditoría:** Verifica formatos abiertos y calidad OCR.
-* **+ Búsqueda:** Análisis profundo de contenido (Mayor tiempo de proceso).
+* **+ Búsqueda:** Análisis profundo de contenido.
 """)
 
 archivo_subido = st.file_uploader("Carga Excel (.xlsx)", type=["xlsx"])
@@ -251,18 +242,16 @@ if archivo_subido and st.button("🚀 Iniciar Proceso"):
     if total == 0:
         st.warning("No se encontraron enlaces.")
     else:
-        # Lógica de Workers
         if modo_sigilo:
             workers = 2
-            mensaje_vel = "🐢 MODO SIGILO ACTIVADO"
+            mensaje_vel = "🐢 MODO SIGILO"
         else:
-            # Si solo es verificación simple (HEAD), podemos usar muchos más robots porque es muy ligero
             if not act_auditoria and not act_busqueda:
-                workers = 12 # ¡Súper Rápido!
-                mensaje_vel = "⚡ MODO FLASH (Solo Verificación)"
+                workers = 12 
+                mensaje_vel = "⚡ MODO FLASH"
             else:
                 workers = 8
-                mensaje_vel = "🚀 MODO ESTÁNDAR (Análisis Completo)"
+                mensaje_vel = "🚀 MODO ESTÁNDAR"
         
         st.info(f"{mensaje_vel}: Procesando {total} enlaces con {workers} robots...")
         
@@ -284,7 +273,6 @@ if archivo_subido and st.button("🚀 Iniciar Proceso"):
         df = pd.DataFrame(resultados)
         
         # --- PESTAÑAS DINÁMICAS ---
-        # Mostramos pestañas según lo que se activó
         tabs_titulos = ["📄 Resultados Generales", "📊 Gráficos"]
         if act_auditoria:
             tabs_titulos.insert(1, "🛠️ Detalles Técnicos")
@@ -293,16 +281,38 @@ if archivo_subido and st.button("🚀 Iniciar Proceso"):
             
         tabs = st.tabs(tabs_titulos)
         
-        # 1. General
+        # 0. General
         with tabs[0]:
             st.dataframe(df)
             st.download_button("Descargar CSV", df.to_csv(index=False).encode('utf-8'), "auditoria_modular.csv")
             
-        # Pestañas condicionales
+        # Pestañas condicionales (Manejo de índices)
         idx = 1
         if act_auditoria:
             with tabs[idx]:
                 st.subheader("Análisis de Formatos")
                 c1, c2 = st.columns(2)
                 c1.warning("⚠️ Requieren OCR (Imagen):")
-                c1.dataframe(df[df['Formato'].
+                # Aquí estaba el error, ya está corregido 👇
+                c1.dataframe(df[df['Formato'].str.contains("Imagen", na=False)])
+                c2.error("❌ Formatos No Estándar:")
+                c2.dataframe(df[df['Formato'].str.contains("No Estándar", na=False)])
+            idx += 1
+            
+        if act_busqueda:
+            with tabs[idx]:
+                st.subheader("Coincidencias de Texto")
+                encontrados = df[df['Contenido'].str.contains("ENCONTRADO", na=False)]
+                st.metric("Documentos Positivos", len(encontrados))
+                st.dataframe(encontrados)
+            idx += 1
+            
+        # Gráficos
+        with tabs[idx]:
+            c_g1, c_g2 = st.columns(2)
+            c_g1.markdown("#### Estado de Disponibilidad")
+            st.bar_chart(df['Estado'].value_counts())
+            
+            if act_auditoria:
+                c_g2.markdown("#### Calidad de Formatos")
+                st.bar_chart(df['Formato'].value_counts())
